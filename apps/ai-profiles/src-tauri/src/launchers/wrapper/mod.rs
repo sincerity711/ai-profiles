@@ -277,6 +277,10 @@ fn handoff_ready(wrapper: &Path) -> bool {
     };
     handoff_recorded(&info)
         && info
+            .get(profile_shim::PROXY_PREPARE_KEY)
+            .and_then(Value::as_boolean)
+            == Some(true)
+        && info
             .get(profile_shim::HOST_BINARY_KEY)
             .and_then(Value::as_string)
             .is_some_and(|path| Path::new(path).exists())
@@ -672,7 +676,11 @@ mod tests {
         let destination = dir.path().join("Fake (Work).app");
         let home = Path::new("/data/cli-config");
 
-        build(&request(&vendor, &destination, Some(home))).unwrap();
+        let host = dir.path().join("host");
+        write_script(&host, "printf '%s' '<plist version=\"1.0\"><dict><key>args</key><array/><key>env</key><dict/></dict></plist>'\n");
+        let mut build_request = request(&vendor, &destination, Some(home));
+        build_request.host_binary = &host;
+        build(&build_request).unwrap();
 
         let macos = destination.join("Contents/MacOS");
         assert!(macos.join("Fake").is_file(), "shim under the original name");
@@ -1012,7 +1020,23 @@ mod tests {
     fn wrapper_bundle(dir: &Path, name: &str, version: &str, host: &str) -> PathBuf {
         let mut entries = vec![(info_plist::VENDOR_VERSION_KEY, version)];
         entries.extend(handoff_entries(host));
-        bundle_with_info(dir, name, &entries)
+        let bundle = bundle_with_info(dir, name, &entries);
+        let mut info = read_info_plist(&bundle).unwrap();
+        info.insert(profile_shim::PROXY_PREPARE_KEY.into(), Value::Boolean(true));
+        write_plist(&bundle.join("Contents/Info.plist"), info).unwrap();
+        bundle
+    }
+
+    #[test]
+    fn wrappers_without_proxy_preparation_are_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = write_host_binary(dir.path());
+        let bundle = wrapper_bundle(dir.path(), "Wrapper.app", "2.0", &host);
+        assert_eq!(state(None, &bundle, BUILT_BY), WrapperState::Current);
+        let mut info = read_info_plist(&bundle).unwrap();
+        info.remove(profile_shim::PROXY_PREPARE_KEY);
+        write_plist(&bundle.join("Contents/Info.plist"), info).unwrap();
+        assert_eq!(state(None, &bundle, BUILT_BY), WrapperState::Stale);
     }
 
     #[test]

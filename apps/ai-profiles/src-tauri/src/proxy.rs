@@ -156,6 +156,49 @@ pub fn load() -> AppResult<ProxySettings> {
     }
 }
 
+/// Read by the wrapper shim on every Dock/Finder launch. A failed preflight
+/// returns no launch configuration, so the shim cannot silently launch direct.
+pub fn prepare_profile_launch(id: &str) -> Result<(), String> {
+    let profiles = crate::profiles::load().map_err(|e| e.message())?;
+    let profile = profiles
+        .iter()
+        .find(|p| p.id == id && p.surfaces.gui)
+        .ok_or_else(|| "Unknown desktop profile".to_string())?;
+    let settings = load().map_err(|e| e.message())?;
+    settings.check().map_err(|e| e.message())?;
+    let data = crate::paths::profile_dir(&profile.id)
+        .map_err(|e| e.message())?
+        .join("gui-data");
+    prepare_imported(&data, &settings).map_err(|e| e.message())?;
+    let mut command = Command::new("unused");
+    settings.apply(&mut command);
+    let mut config = plist::Dictionary::new();
+    config.insert(
+        "args".into(),
+        plist::Value::Array(
+            command
+                .get_args()
+                .map(|a| plist::Value::String(a.to_string_lossy().into_owned()))
+                .collect(),
+        ),
+    );
+    let env: plist::Dictionary = command
+        .get_envs()
+        .filter_map(|(k, v)| {
+            v.map(|v| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    plist::Value::String(v.to_string_lossy().into_owned()),
+                )
+            })
+        })
+        .collect();
+    config.insert("env".into(), plist::Value::Dictionary(env));
+    plist::Value::Dictionary(config)
+        .to_writer_xml(std::io::stdout())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_desktop_proxy() -> AppResult<ProxySettings> {
     load()

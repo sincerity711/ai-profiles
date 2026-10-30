@@ -16,7 +16,7 @@ mod migration;
 mod path_setup;
 mod paths;
 mod profiles;
-mod proxy;
+pub mod proxy;
 mod sessions;
 mod shared_config;
 mod slug;

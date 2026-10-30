@@ -48,7 +48,8 @@ export function ProxySection() {
         Desktop proxy
       </h3>
       <p className="mb-3 text-sm text-muted">
-        Shared by managed desktop profiles. The proxy is checked before launch. Turn off Distinct Dock icon to use it.
+        Shared by managed desktop profiles. The proxy is checked before launch, including profiles with a distinct Dock
+        icon.
       </p>
       {settings ? (
         <fieldset disabled={busy} className="space-y-3">
