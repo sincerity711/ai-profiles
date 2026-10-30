@@ -10,7 +10,7 @@ This fork adds a few features for my own workflow:
 
 - Desktop proxy settings and user-owned launchers with distinct Dock identities.
 - Management of official Claude and ChatGPT desktop app updates from Settings.
-- API cost estimates for private model channels: models such as `hai/gpt-6.1-sol` and `aicore/gpt-6.1-sol` remain separate in usage statistics, while prices fall back to the model signature after the last `/`. These are reference list-price estimates, not the channel's actual bill; unknown signatures remain unpriced.
+- Usage statistics for OpenAI-compatible providers, including setups using services such as DeepSeek. Provider/model entries remain separate, with API cost estimates available when matching rates exist in the price catalog.
 
 The documentation below is inherited from upstream. Release downloads linked below are upstream builds; build this fork from source to use these additions.
 
