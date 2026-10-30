@@ -16,6 +16,7 @@ mod migration;
 mod path_setup;
 mod paths;
 mod profiles;
+mod proxy;
 mod sessions;
 mod shared_config;
 mod slug;
@@ -111,6 +112,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            proxy::get_desktop_proxy,
+            proxy::save_desktop_proxy,
+            proxy::test_desktop_proxy,
             commands::list_profiles,
             commands::create_profile,
             commands::regenerate_launchers,

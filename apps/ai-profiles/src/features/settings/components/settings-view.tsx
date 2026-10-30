@@ -7,6 +7,7 @@ import { Button, Kbd } from '@/design'
 
 import { AppearanceSection } from './appearance-section'
 import { DataSection, DataSectionFallback } from './data-section'
+import { ProxySection } from './proxy-section'
 import { SettingsFooterRow } from './settings-footer-row'
 import { SystemSection, SystemSectionFallback } from './system-section'
 
@@ -41,6 +42,7 @@ export function SettingsView({ onClose, onOpenMigration, onOpenAbout }: Props) {
       }
     >
       <AppearanceSection />
+      <ProxySection />
       <Suspense fallback={<SystemSectionFallback />}>
         <SystemSection />
       </Suspense>
