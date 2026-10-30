@@ -48,4 +48,4 @@ To undo the move, quit Claude and move vendor/Claude.app back to
 falls back to that location. Old claude-multiprofile launchers that hardcode
 /Applications/Claude.app must be updated or retired.
 
-This relocation does not implement downloading or replacing vendor updates.
+Settings → Desktop app updates now downloads, verifies, installs and restores official bundles. See [desktop-updates.md](desktop-updates.md).

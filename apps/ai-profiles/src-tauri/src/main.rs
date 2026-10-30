@@ -7,6 +7,20 @@ use ai_profiles_lib::cli::{invocation, open_profile, Invocation};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--desktop-update") {
+        let result = match (args.get(2), args.get(3)) {
+            (Some(action), Some(app)) => ai_profiles_lib::desktop_updates::cli(action, app),
+            _ => Err(
+                "Usage: --desktop-update status|check|download|install|rollback claude|codex"
+                    .into(),
+            ),
+        };
+        if let Err(message) = result {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.get(1).map(String::as_str) == Some(profile_shim::PROXY_PREPARE_FLAG) {
         let result = args
             .get(2)

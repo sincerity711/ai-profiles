@@ -7,6 +7,7 @@ import { Button } from '@/design'
 
 import { AppearanceSection } from './appearance-section'
 import { DataSection, DataSectionFallback } from './data-section'
+import { DesktopUpdatesSection } from './desktop-updates-section'
 import { ProxySection } from './proxy-section'
 import { SettingsFooterRow } from './settings-footer-row'
 import { SystemSection, SystemSectionFallback } from './system-section'
@@ -49,6 +50,7 @@ export function SettingsView({ onClose, onOpenMigration, onOpenAbout }: Props) {
       header={<h2 className="text-[24px] font-semibold tracking-[-0.015em] text-ink">Settings</h2>}
     >
       <AppearanceSection />
+      <DesktopUpdatesSection />
       <ProxySection />
       <Suspense fallback={<SystemSectionFallback />}>
         <SystemSection />

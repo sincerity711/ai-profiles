@@ -107,6 +107,7 @@ pub fn prepare_imported(data_dir: &std::path::Path, settings: &ProxySettings) ->
     let object = policy
         .as_object_mut()
         .ok_or_else(|| AppError::Validation("Invalid Claude policy object".into()))?;
+    object.insert("disableAutoUpdates".into(), true.into());
     if settings.enabled {
         object.insert("egressProxyUrl".into(), settings.url.clone().into());
     } else {
@@ -164,6 +165,7 @@ pub fn prepare_profile_launch(id: &str) -> Result<(), String> {
         .iter()
         .find(|p| p.id == id && p.surfaces.gui)
         .ok_or_else(|| "Unknown desktop profile".to_string())?;
+    crate::desktop_updates::require_not_installing(profile.app).map_err(|e| e.message())?;
     let settings = load().map_err(|e| e.message())?;
     settings.check().map_err(|e| e.message())?;
     let data = crate::paths::profile_dir(&profile.id)
@@ -171,6 +173,9 @@ pub fn prepare_profile_launch(id: &str) -> Result<(), String> {
         .join("gui-data");
     prepare_imported(&data, &settings).map_err(|e| e.message())?;
     let mut command = Command::new("unused");
+    if profile.app == crate::app_kind::AppKind::Codex {
+        command.env("CODEX_SPARKLE_ENABLED", "false");
+    }
     settings.apply(&mut command);
     let mut config = plist::Dictionary::new();
     config.insert(

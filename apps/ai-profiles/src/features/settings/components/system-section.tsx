@@ -9,8 +9,7 @@ import { ArrowClockwise } from '@phosphor-icons/react'
 import { Button, cn, panelClasses, Skeleton, StatusDot } from '@/design'
 import { useAppMetadata } from '@/features/about/api/use-app-metadata'
 import { useDependencies } from '@/features/dependencies/api/use-dependencies'
-import { hookInstallMessage, rcDisplay, shellHookStatus, updateAction } from '@/features/settings/lib/system-status'
-import { type UpdaterStatus, useUpdater } from '@/features/updater/api/use-updater'
+import { hookInstallMessage, rcDisplay, shellHookStatus } from '@/features/settings/lib/system-status'
 import { appIds, appSpecs } from '@/lib/app-registry'
 import { detectShell, installPathHook } from '@/lib/commands'
 
@@ -32,23 +31,6 @@ type Row = {
    * A longer account of the row's state, shown under its label.
    */
   hint?: string
-}
-
-function describeUpdaterStatus(status: UpdaterStatus): { tone: StatusTone; detail: string } {
-  switch (status.kind) {
-    case 'idle':
-      return { tone: 'neutral', detail: '—' }
-    case 'checking':
-      return { tone: 'neutral', detail: 'Checking…' }
-    case 'up-to-date':
-      return { tone: 'success', detail: 'Up to date' }
-    case 'available':
-      return { tone: 'warning', detail: `${status.update.version} available` }
-    case 'installing':
-      return { tone: 'warning', detail: 'Installing…' }
-    case 'error':
-      return { tone: 'warning', detail: status.message }
-  }
 }
 
 // Version strings aren't surfaced from the Rust side yet (see 99-todo.md), so
@@ -100,7 +82,7 @@ function buildRows(
     },
     {
       kind: 'updates',
-      label: 'Updates',
+      label: 'Launcher build',
       tone: updater.tone,
       detail: updater.detail,
       aux: `v${version}`,
@@ -112,11 +94,11 @@ function buildRows(
  * Consolidated System status card.
  *
  * Rows: two per managed app (Desktop / CLI) from the registry, plus Shell
- * PATH and Updates — six rows in total when both Claude and ChatGPT are
+ * PATH and launcher build — six rows in total when both Claude and ChatGPT are
  * registered. Each row shows a status dot (success/warning/neutral), a
  * label, and a mono detail string. Beneath the card a hookline lets the
  * user re-install the shell hook in one click and an updater hookline lets
- * them trigger a manual update check.
+ * them identify this local custom build. Desktop updates have their own section.
  *
  * The section owns its own data: `useDependencies` suspends here (not at
  * the SettingsView level) so the rest of the Settings pane can paint
@@ -124,7 +106,6 @@ function buildRows(
  */
 export function SystemSection() {
   const dependencies = useDependencies()
-  const updater = useUpdater()
   const { version } = useAppMetadata()
   const [shell, setShell] = useState<Shell | null>(null)
 
@@ -136,10 +117,8 @@ export function SystemSection() {
     await Promise.all([dependencies.refresh(), detectShell().then(setShell)])
   }
 
-  const updaterDescription = describeUpdaterStatus(updater.status)
+  const updaterDescription = { tone: 'neutral' as const, detail: 'Local custom build' }
   const rows = buildRows(dependencies.deps, shell, updaterDescription, version)
-  const action = updateAction(updater.status)
-  const handleUpdateAction = action.installs ? updater.installAndRestart : updater.check
 
   const hook = useShellHook({
     localBinOnPath: dependencies.deps.localBinOnPath,
@@ -153,11 +132,6 @@ export function SystemSection() {
     path: (
       <Button size="sm" variant="secondary" disabled={!shell || hook.busy} onClick={() => void hook.install()}>
         {hook.installed ? 'Re-install hook' : 'Install hook'}
-      </Button>
-    ),
-    updates: (
-      <Button size="sm" variant="secondary" disabled={action.busy} onClick={() => void handleUpdateAction()}>
-        {action.label}
       </Button>
     ),
   }
@@ -183,6 +157,9 @@ export function SystemSection() {
           {hook.error}
         </p>
       ) : null}
+      <p className="mt-2 text-sm text-muted">
+        Upstream launcher updates are disabled to preserve your proxy and app management features.
+      </p>
     </section>
   )
 }

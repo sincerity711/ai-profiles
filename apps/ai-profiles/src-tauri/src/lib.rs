@@ -7,6 +7,7 @@ pub mod cli;
 mod codex_rpc;
 mod commands;
 mod deps;
+pub mod desktop_updates;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod dev_tools;
 mod error;
@@ -41,14 +42,13 @@ pub fn run() {
     #[cfg(all(debug_assertions, target_os = "macos"))]
     let builder = dev_tools::install(builder);
     builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        // Provides `relaunch()` to the frontend so the updater can restart
-        // the app itself after `downloadAndInstall` finishes — Tauri 2's
-        // updater plugin does NOT relaunch on its own.
+        // Local custom build: upstream updates would erase our integration.
+        // Retain upstream's process utilities without registering its updater.
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
+            desktop_updates::start_checks();
             // Bring the desktop launchers an earlier version built up to this
             // one, so every profile changes over now rather than whenever it
             // next happens to be rebuilt. Off the main thread: a wrapper takes
@@ -119,6 +119,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            desktop_updates::get_desktop_updates,
+            desktop_updates::desktop_update_action,
             proxy::get_desktop_proxy,
             proxy::save_desktop_proxy,
             proxy::test_desktop_proxy,
