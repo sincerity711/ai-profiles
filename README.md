@@ -2,6 +2,18 @@
 
 > Run multiple Claude and ChatGPT accounts on one Mac — the desktop app and the CLI, side by side — and move coding sessions between them. Free and open-source.
 
+## About this fork
+
+This is [sincerity711's personal fork](https://github.com/sincerity711/ai-profiles) of [bartekczyz/ai-profiles](https://github.com/bartekczyz/ai-profiles). Many thanks to [Bartek Czyż](https://github.com/bartekczyz) and the upstream contributors for creating and sharing this project. The original MIT license and attribution are retained.
+
+This fork adds a few features for my own workflow:
+
+- Desktop proxy settings and user-owned launchers with distinct Dock identities.
+- Management of official Claude and ChatGPT desktop app updates from Settings.
+- API cost estimates for private model channels: models such as `hai/gpt-6.1-sol` and `aicore/gpt-6.1-sol` remain separate in usage statistics, while prices fall back to the model signature after the last `/`. These are reference list-price estimates, not the channel's actual bill; unknown signatures remain unpriced.
+
+The documentation below is inherited from upstream. Release downloads linked below are upstream builds; build this fork from source to use these additions.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="apps/landing/public/screenshot-dark.png">
   <img alt="ai-profiles app" src="apps/landing/public/screenshot-light.png">
@@ -22,7 +34,7 @@ Download the latest `.dmg` from [Releases](https://github.com/bartekczyz/ai-prof
 You need Node.js 22+, pnpm, and Rust ([rust-lang.org](https://rust-lang.org/)).
 
 ```sh
-git clone https://github.com/bartekczyz/ai-profiles.git
+git clone https://github.com/sincerity711/ai-profiles.git
 cd ai-profiles
 pnpm install
 pnpm --filter ai-profiles tauri build --no-sign

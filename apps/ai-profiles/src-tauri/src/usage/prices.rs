@@ -111,13 +111,21 @@ impl Catalog {
         now - self.fetched_at > MAX_AGE
     }
 
-    /// What `model` costs, if the list has it: by its id, or by the id
-    /// without the date some end in (`-20251001`, `-2025-10-01`).
+    /// What `model` costs: prefer its full id, then the signature after the
+    /// last `/` for models served through a channel. Each also falls back
+    /// to the id without a trailing date (`-20251001`, `-2025-10-01`).
+    /// This only resolves prices; callers keep the original model identity.
     pub fn model(&self, model: &str) -> Option<Rates<'_>> {
         let entry = self
             .models
             .get(model)
-            .or_else(|| self.models.get(undated(model)?))?;
+            .or_else(|| self.models.get(undated(model)?))
+            .or_else(|| {
+                let (_, signature) = model.rsplit_once('/')?;
+                self.models
+                    .get(signature)
+                    .or_else(|| self.models.get(undated(signature)?))
+            })?;
         entry.as_object().map(Rates)
     }
 }
@@ -593,6 +601,83 @@ pub(crate) mod tests {
         assert!(catalog.model("gpt-5.6-2026-10-01").is_some());
         assert!(catalog.model("claude-opus-5-55").is_none());
         assert!(catalog.model("gpt-5.6-2026-1001").is_none());
+    }
+
+    #[test]
+    fn channel_models_use_their_signature_for_prices() {
+        let catalog = catalog_of(litellm(), FETCHED);
+        for model in [
+            "hai/gpt-5.6",
+            "aicore/gpt-5.6",
+            "github/gpt-5.6",
+            "gateway/channel/gpt-5.6",
+            "hai/gpt-5.6-2026-10-01",
+            "hai/claude-opus-5-5-20261001",
+        ] {
+            assert!(catalog.model(model).is_some(), "{model}");
+        }
+        for model in ["hai/unknown-model", "hai/", "hai/gpt-5.6-unknown"] {
+            assert!(catalog.model(model).is_none(), "{model}");
+        }
+    }
+
+    #[test]
+    fn private_openai_channels_resolve_against_the_snapshot() {
+        let catalog = snapshot();
+        for model in [
+            "hai/gpt-5.6-sol",
+            "hai/gpt-6-astra",
+            "aicore2/gpt-6.1-sol",
+            "github/gpt-6.1-sol",
+            "aicore/gpt-6.1-sol",
+            "hai/gpt-6.1-sol",
+            "aicore/gpt-6-astra",
+            "hai/gpt-5.6-luna",
+            "hai/gpt-6-luna",
+            "github/gpt-5.6-sol",
+            "github/gpt-5.6-luna",
+            "github/gpt-6-luna",
+            "aicore/gpt-5.6-sol",
+            "aicore2/gpt-6-astra",
+        ] {
+            let (_, signature) = model.rsplit_once('/').unwrap();
+            let tokens = tokens(1_000, 100);
+            let cost = catalog
+                .model(model)
+                .unwrap()
+                .cost(&tokens, 0, Tier::Standard);
+            let direct = catalog
+                .model(signature)
+                .unwrap()
+                .cost(&tokens, 0, Tier::Standard);
+            assert!(cost.is_ok(), "{model}");
+            assert_eq!(cost, direct, "{model}");
+        }
+    }
+
+    #[test]
+    fn full_ids_and_dated_signatures_take_precedence_over_fallbacks() {
+        let mut catalog = catalog_of(litellm(), FETCHED);
+        let mut custom = openai_model();
+        custom["input_cost_per_token"] = json!(9e-6);
+        // A future catalog with channel-specific prices must keep precedence.
+        catalog.models.insert("hai/gpt-5.6".into(), custom);
+        let mut dated = openai_model();
+        dated["input_cost_per_token"] = json!(7e-6);
+        catalog.models.insert("gpt-5.6-2026-10-01".into(), dated);
+        for (model, expected) in [
+            ("hai/gpt-5.6", 9.0),
+            ("hai/gpt-5.6-2026-10-01", 9.0),
+            ("github/gpt-5.6-2026-10-01", 7.0),
+            ("github/gpt-5.6", 2.0),
+        ] {
+            let cost = catalog
+                .model(model)
+                .unwrap()
+                .cost(&tokens(1_000_000, 0), 0, Tier::Standard)
+                .unwrap();
+            assert!((cost.input - expected).abs() < 1e-12, "{model}");
+        }
     }
 
     /// A list of model `m`, with `entry` as its entry.
