@@ -98,7 +98,7 @@ const claude: AppSpec = {
   hasUsage: true,
   gui: {
     label: 'Desktop App launcher',
-    description: 'Creates /Applications/Claude (Name).app with an isolated user-data directory.',
+    description: 'Creates ~/Applications/Claude (Name).app with an isolated user-data directory.',
     installUrl: 'https://claude.ai/download',
   },
   cli: {
@@ -141,7 +141,7 @@ const codex: AppSpec = {
   hasUsage: true,
   gui: {
     label: 'Desktop App launcher',
-    description: 'Creates /Applications/ChatGPT (Name).app with an isolated user-data directory.',
+    description: 'Creates ~/Applications/ChatGPT (Name).app with an isolated user-data directory.',
     installUrl: 'https://chatgpt.com/codex',
   },
   cli: {

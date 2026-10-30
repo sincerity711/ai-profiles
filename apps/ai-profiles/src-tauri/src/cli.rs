@@ -127,3 +127,28 @@ mod tests {
         assert_eq!(invocation(&only_argv0), Invocation::Gui);
     }
 }
+
+/// Launch a plain managed profile directly; used by generated Finder/Dock launchers.
+pub fn launch_profile_direct(id: &str) -> Result<(), String> {
+    let profile = profiles::load()
+        .map_err(|e| e.message())?
+        .into_iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "Unknown profile".to_string())?;
+    if !profile.surfaces.gui {
+        return Err("Profile has no desktop surface".into());
+    }
+    let data = crate::paths::profile_dir(id)
+        .map_err(|e| e.message())?
+        .join("gui-data");
+    let config = crate::paths::cli_config_dir(id).map_err(|e| e.message())?;
+    let spec = profile.app.spec();
+    launch::focus_or_launch(&data.display().to_string(), spec, launch::focus_pid, || {
+        launch::open_new_instance(
+            &data.display().to_string(),
+            spec,
+            Some((spec.cli_config_env, &config)),
+        )
+    })
+    .map_err(|e| e.message())
+}

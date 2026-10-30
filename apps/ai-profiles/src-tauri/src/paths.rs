@@ -81,7 +81,21 @@ pub fn gui_launcher_path(name: &str, spec: &AppSpec) -> PathBuf {
 /// current one — used to locate a bundle generated under a
 /// `legacy_launcher_prefixes` entry before it was renamed.
 pub fn gui_launcher_path_with_prefix(name: &str, prefix: &str) -> PathBuf {
-    applications_dir().join(format!("{prefix} ({name}).app"))
+    managed_applications_dir().join(format!("{prefix} ({name}).app"))
+}
+
+/// User-owned launchers do not require write access to the vendor install folder.
+pub fn managed_applications_dir() -> PathBuf {
+    #[cfg(test)]
+    {
+        test_app_data_dir().join("Applications")
+    }
+    #[cfg(not(test))]
+    {
+        dirs::home_dir()
+            .expect("macOS home directory")
+            .join("Applications")
+    }
 }
 
 /// Pure: every path under `/Applications` this app's stock GUI bundle could
@@ -177,11 +191,11 @@ mod tests {
     fn gui_launcher_path_uses_launcher_prefix() {
         assert_eq!(
             gui_launcher_path("Personal", &CLAUDE),
-            PathBuf::from("/Applications/Claude (Personal).app")
+            managed_applications_dir().join("Claude (Personal).app")
         );
         assert_eq!(
             gui_launcher_path("Personal", &CODEX),
-            PathBuf::from("/Applications/ChatGPT (Personal).app")
+            managed_applications_dir().join("ChatGPT (Personal).app")
         );
     }
 
@@ -189,7 +203,7 @@ mod tests {
     fn gui_launcher_path_with_prefix_uses_the_given_prefix() {
         assert_eq!(
             gui_launcher_path_with_prefix("Personal", "Codex"),
-            PathBuf::from("/Applications/Codex (Personal).app")
+            managed_applications_dir().join("Codex (Personal).app")
         );
     }
 

@@ -114,8 +114,10 @@ pub fn exports_config_home(bundle: &Path, env: &str) -> bool {
 fn exports(bundle: &Path, info: &::plist::Dictionary, env: &str) -> bool {
     let text = |key: &str| info.get(key).and_then(::plist::Value::as_string);
     if text("CFBundleExecutable") == Some("launcher") {
-        return fs::read_to_string(bundle.join("Contents/MacOS/launcher"))
-            .is_ok_and(|script| script.contains(&format!("export {env}=")));
+        return fs::read_to_string(bundle.join("Contents/MacOS/launcher")).is_ok_and(|script| {
+            script.contains(&format!("export {env}="))
+                || script.contains(" --launch-profile-direct ")
+        });
     }
     wrapper::config_env_recorded(info) && text(profile_shim::CONFIG_ENV_NAME_KEY) == Some(env)
 }
@@ -168,7 +170,6 @@ fn build_script_launcher(
     app: &ResolvedGuiApp,
     bundle: &Path,
 ) -> AppResult<()> {
-    let spec = profile.app.spec();
     if bundle.exists() {
         fs::remove_dir_all(bundle).map_err(|err| {
             AppError::Io(std::io::Error::new(
@@ -190,8 +191,7 @@ fn build_script_launcher(
     let plist_bytes = plist::info_plist(profile, version)?;
     fs::write(contents.join("Info.plist"), plist_bytes)?;
 
-    let script_text =
-        script::launcher_script(&profile.id, spec, &app.bundle_path.display().to_string());
+    let script_text = script::managed_launcher_script(&profile.id, &std::env::current_exe()?);
     let launcher_path = macos.join("launcher");
     fs::write(&launcher_path, script_text)?;
     let mut perms = fs::metadata(&launcher_path)?.permissions();

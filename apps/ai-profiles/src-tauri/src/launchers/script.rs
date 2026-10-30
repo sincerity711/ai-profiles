@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::app_kind::AppSpec;
 
 /// Generate the bash script body for `Contents/MacOS/launcher`. Execs
@@ -17,6 +18,7 @@ use crate::app_kind::AppSpec;
 /// shares `~/.claude`'s history, settings, plugins and MCP servers. `open`
 /// propagates the exported environment to the launched GUI app, so the export
 /// reaches it.
+#[cfg(test)]
 pub fn launcher_script(profile_id: &str, spec: &AppSpec, gui_app_target: &str) -> String {
     let profiles_base = "$HOME/Library/Application Support/ai-profiles/profiles";
     let config_home_export = format!(
@@ -36,6 +38,16 @@ DATA_DIR="{profiles_base}/{profile_id}/gui-data"
 mod tests {
     use super::*;
     use crate::app_kind::{CLAUDE, CODEX};
+
+    #[test]
+    fn managed_launcher_quotes_paths_and_keeps_proxy_in_host() {
+        let script = managed_launcher_script(
+            "friday",
+            std::path::Path::new("/Applications/AI Profiles.app/Contents/MacOS/ai-profiles"),
+        );
+        assert!(script.contains("exec '/Applications/AI Profiles.app/Contents/MacOS/ai-profiles' --launch-profile-direct 'friday'"));
+        assert!(!script.contains("exec open"));
+    }
 
     #[test]
     fn script_uses_open_n_with_the_given_gui_app_target() {
@@ -91,4 +103,14 @@ mod tests {
         ));
         assert!(script.contains(r#"export CLAUDE_CONFIG_DIR="$CONFIG_DIR""#));
     }
+}
+
+/// Route Finder/Dock launches through the same checked native launch path.
+pub fn managed_launcher_script(profile_id: &str, host: &std::path::Path) -> String {
+    let quote = |s: &str| format!("'{}'", s.replace(char::from(39), "'\"'\"'"));
+    format!(
+        "#!/bin/sh\nexec {} --launch-profile-direct {}\n",
+        quote(&host.display().to_string()),
+        quote(profile_id)
+    )
 }

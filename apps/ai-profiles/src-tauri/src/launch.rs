@@ -235,6 +235,9 @@ pub fn open_new_instance(
     spec: &AppSpec,
     config_env: Option<(&str, &Path)>,
 ) -> AppResult<()> {
+    let proxy = crate::proxy::load()?;
+    proxy.check()?;
+    crate::proxy::prepare_imported(Path::new(data_dir), &proxy)?;
     let resolved = crate::paths::resolve_gui_app(spec)
         .ok_or_else(|| AppError::Validation(format!("{} isn't installed", spec.display_name)))?;
     let mut command = open_command();
@@ -247,6 +250,7 @@ pub fn open_new_instance(
     if let Some((name, value)) = config_env {
         command.env(name, value);
     }
+    proxy.apply(&mut command);
     let status = command.status().map_err(AppError::Io)?;
     if !status.success() {
         return Err(AppError::Validation(format!(
@@ -666,7 +670,24 @@ pub fn open_profile(
     };
     let mut bypass = None;
     focus_or_launch(&data_dir, spec, focus, || {
-        bypass = launch_with(profile.distinct_dock_icon, &mut effects)?;
+        let proxy = crate::proxy::load()?;
+        if proxy.enabled {
+            if profile.distinct_dock_icon {
+                return Err(AppError::Validation(
+                    "Disable Distinct Dock icon to use the desktop proxy".into(),
+                ));
+            }
+            open_new_instance(
+                &data_dir,
+                spec,
+                Some((
+                    spec.cli_config_env,
+                    &crate::paths::cli_config_dir(&profile.id)?,
+                )),
+            )?;
+        } else {
+            bypass = launch_with(profile.distinct_dock_icon, &mut effects)?;
+        }
         Ok(())
     })?;
     Ok(bypass)
