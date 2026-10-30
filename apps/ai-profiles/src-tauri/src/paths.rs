@@ -98,18 +98,19 @@ pub fn managed_applications_dir() -> PathBuf {
     }
 }
 
-/// Pure: every path under `/Applications` this app's stock GUI bundle could
-/// occupy, paired with the executable name that bundle would run, newest
-/// candidate first. Distinct from `stock_gui_support_dir`, which points at
-/// the app's *data* directory under Application Support.
+/// Prefer official bundles in the app-owned vendor directory, then system installs.
 pub fn gui_app_bundle_candidates(spec: &AppSpec) -> Vec<(PathBuf, &'static str)> {
-    spec.gui_bundle_candidates
-        .iter()
-        .map(|candidate| {
-            (
-                applications_dir().join(candidate.bundle_name),
-                candidate.macos_exec,
-            )
+    let mut roots = Vec::new();
+    if let Ok(data) = app_data_dir() {
+        roots.push(data.join("vendor"));
+    }
+    roots.push(applications_dir());
+    roots
+        .into_iter()
+        .flat_map(|root| {
+            spec.gui_bundle_candidates
+                .iter()
+                .map(move |candidate| (root.join(candidate.bundle_name), candidate.macos_exec))
         })
         .collect()
 }
@@ -211,11 +212,19 @@ mod tests {
     fn gui_app_bundle_candidates_covers_every_known_bundle_name() {
         assert_eq!(
             gui_app_bundle_candidates(&CLAUDE),
-            vec![(PathBuf::from("/Applications/Claude.app"), "Claude")]
+            vec![
+                (app_data_dir().unwrap().join("vendor/Claude.app"), "Claude"),
+                (PathBuf::from("/Applications/Claude.app"), "Claude"),
+            ]
         );
         assert_eq!(
             gui_app_bundle_candidates(&CODEX),
             vec![
+                (
+                    app_data_dir().unwrap().join("vendor/ChatGPT.app"),
+                    "ChatGPT"
+                ),
+                (app_data_dir().unwrap().join("vendor/Codex.app"), "Codex"),
                 (PathBuf::from("/Applications/ChatGPT.app"), "ChatGPT"),
                 (PathBuf::from("/Applications/Codex.app"), "Codex"),
             ]
