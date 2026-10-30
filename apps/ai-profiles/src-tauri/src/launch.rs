@@ -99,11 +99,37 @@ pub(crate) fn pids_ending_with(ps_output: &str, suffixes: &[String]) -> Vec<i32>
             let command = command.trim_end();
             suffixes
                 .iter()
-                .any(|suffix| command.ends_with(suffix.as_str()))
+                .any(|suffix| matches_process_suffix(command, suffix))
                 .then(|| pid.parse::<i32>().ok())
                 .flatten()
         })
         .collect()
+}
+
+/// Proxy switches sit between the executable and data directory. Match only
+/// those known switches so helpers and another profile cannot look identical.
+fn matches_process_suffix(command: &str, suffix: &str) -> bool {
+    if command.ends_with(suffix) {
+        return true;
+    }
+    let Some((exec, data)) = suffix.split_once(" --user-data-dir=") else {
+        return false;
+    };
+    let Some(before_data) = command.strip_suffix(&format!(" --user-data-dir={data}")) else {
+        return false;
+    };
+    let Some((program, switches)) = before_data.split_once(" --") else {
+        return false;
+    };
+    program.ends_with(exec)
+        && switches.split_whitespace().enumerate().all(|(i, arg)| {
+            let arg = if i == 0 {
+                arg
+            } else {
+                arg.strip_prefix("--").unwrap_or("")
+            };
+            arg.starts_with("proxy-server=") || arg.starts_with("proxy-bypass-list=")
+        })
 }
 
 /// Every running process, one `pid command` line each.
@@ -245,12 +271,12 @@ pub fn open_new_instance(
         .arg("-n")
         .arg("-a")
         .arg(&resolved.bundle_path)
-        .arg("--args")
-        .arg(format!("--user-data-dir={data_dir}"));
+        .arg("--args");
     if let Some((name, value)) = config_env {
         command.env(name, value);
     }
     proxy.apply(&mut command);
+    command.arg(format!("--user-data-dir={data_dir}"));
     let status = command.status().map_err(AppError::Io)?;
     if !status.success() {
         return Err(AppError::Validation(format!(
@@ -695,6 +721,19 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn proxy_switches_do_not_hide_running_profiles_or_match_helpers() {
+        let data = "/Users/me/Library/Application Support/profile/gui-data";
+        let proxy = "--proxy-server=http://localhost:3128 --proxy-bypass-list=localhost;::1";
+        for exec in ["Claude", "Claude.bin"] {
+            let ps = format!("42 /Applications/Claude (friday).app/Contents/MacOS/{exec} {proxy} --user-data-dir={data}");
+            assert_eq!(find_running_pid(&ps, data, "Claude"), Some(42));
+            assert_eq!(find_running_pid(&ps, "/other/profile", "Claude"), None);
+        }
+        let helper = format!("43 /Applications/Claude.app/Contents/MacOS/Claude Helper {proxy} --user-data-dir={data}");
+        assert_eq!(find_running_pid(&helper, data, "Claude"), None);
+    }
 
     #[test]
     fn apps_are_started_without_a_config_home_ai_profiles_inherited() {
