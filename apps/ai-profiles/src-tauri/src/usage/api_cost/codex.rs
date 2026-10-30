@@ -635,6 +635,52 @@ mod tests {
     }
 
     #[test]
+    fn channel_models_share_prices_but_keep_separate_totals() {
+        let home = tempdir().unwrap();
+        let one = usage(1_000_000, 0, 0);
+        write(
+            home.path(),
+            ROLLOUT,
+            &[
+                meta("t1", 0, json!({})),
+                turn_context("hai/gpt-5.6"),
+                count(10, one.clone(), one.clone()),
+                turn_context("aicore/gpt-5.6"),
+                tier("priority"),
+                count(20, usage(2_000_000, 0, 0), one.clone()),
+                turn_context("gpt-5.6"),
+                tier("default"),
+                count(30, usage(3_000_000, 0, 0), one.clone()),
+                turn_context("github/unknown-model"),
+                count(40, usage(4_000_000, 0, 0), one),
+            ],
+        );
+
+        let cost = cost_of(home.path());
+        let models: Vec<(&str, f64)> = cost
+            .by_model
+            .iter()
+            .map(|model| (model.model.as_str(), model.usd))
+            .collect();
+        assert_eq!(
+            models,
+            [
+                ("aicore/gpt-5.6", 8.0),
+                ("GPT-5.6", 4.0),
+                ("hai/gpt-5.6", 4.0),
+            ]
+        );
+        assert_usd(cost.total_usd, 16.0);
+        let day = cost.days.last().unwrap();
+        assert_eq!(day.by_model.len(), 3);
+        assert_usd(day.total_usd, 16.0);
+        assert_eq!(cost.coverage, Coverage::Partial);
+        assert_eq!(cost.unpriced.len(), 1);
+        assert_eq!(cost.unpriced[0].model, "github/unknown-model");
+        assert_eq!(cost.unpriced[0].tokens, 1_000_000);
+    }
+
+    #[test]
     fn each_request_is_priced_as_the_model_and_tier_in_effect() {
         let home = tempdir().unwrap();
         let one = usage(1_000_000, 0, 0);
