@@ -26,6 +26,51 @@ use plist::{Dictionary, Value};
 /// the first launch, when it would look like the app failing to start.
 pub const PROBE_ENV: &str = "AI_PROFILES_SHIM_PROBE";
 
+/// New wrappers ask the host for fresh proxy arguments on every launch.
+pub const PROXY_PREPARE_KEY: &str = "AIProfilesPrepareProxy";
+pub const PROXY_PREPARE_FLAG: &str = "--prepare-profile-proxy";
+
+/// Host-side validation and preflight also apply when a wrapper is launched
+/// directly from Finder. No shell parsing and no fallback on proxy failure.
+pub fn prepare_proxy(host: &Handoff, command: &mut std::process::Command) -> Result<(), String> {
+    let output = std::process::Command::new(&host.host_binary)
+        .args([PROXY_PREPARE_FLAG, &host.profile_id])
+        .output()
+        .map_err(|e| format!("Cannot prepare profile proxy: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Proxy preparation failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let config = Value::from_reader(std::io::Cursor::new(output.stdout))
+        .map_err(|e| format!("Invalid proxy configuration: {e}"))?;
+    let dict = config
+        .as_dictionary()
+        .ok_or("Invalid proxy configuration")?;
+    let args = dict
+        .get("args")
+        .and_then(Value::as_array)
+        .ok_or("Missing proxy arguments")?;
+    let env = dict
+        .get("env")
+        .and_then(Value::as_dictionary)
+        .ok_or("Missing proxy environment")?;
+    for arg in args {
+        command.arg(arg.as_string().ok_or("Invalid proxy argument")?);
+    }
+    for (key, value) in env {
+        if key.is_empty() || key.contains(['=', '\0']) {
+            return Err("Invalid proxy environment key".into());
+        }
+        command.env(
+            key,
+            value.as_string().ok_or("Invalid proxy environment value")?,
+        );
+    }
+    Ok(())
+}
+
 /// `Info.plist` key holding the value of `--user-data-dir`. Required.
 pub const USER_DATA_DIR_KEY: &str = "AIProfilesUserDataDir";
 

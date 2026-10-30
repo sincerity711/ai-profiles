@@ -671,12 +671,9 @@ pub fn open_profile(
     let mut bypass = None;
     focus_or_launch(&data_dir, spec, focus, || {
         let proxy = crate::proxy::load()?;
-        if proxy.enabled {
-            if profile.distinct_dock_icon {
-                return Err(AppError::Validation(
-                    "Disable Distinct Dock icon to use the desktop proxy".into(),
-                ));
-            }
+        proxy.check()?;
+        crate::proxy::prepare_imported(Path::new(&data_dir), &proxy)?;
+        if proxy.enabled && !profile.distinct_dock_icon {
             open_new_instance(
                 &data_dir,
                 spec,

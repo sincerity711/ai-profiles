@@ -7,6 +7,17 @@ use ai_profiles_lib::cli::{invocation, open_profile, Invocation};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some(profile_shim::PROXY_PREPARE_FLAG) {
+        let result = args
+            .get(2)
+            .ok_or_else(|| "Missing profile id".to_string())
+            .and_then(|id| ai_profiles_lib::proxy::prepare_profile_launch(id));
+        if let Err(message) = result {
+            eprintln!("ai-profiles: {message}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--launch-profile-direct") {
         let result = args
             .get(2)

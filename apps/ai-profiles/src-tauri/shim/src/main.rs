@@ -51,6 +51,14 @@ fn run() -> Result<Outcome, String> {
 
     let vendor = vendor_binary_path(&shim);
     let mut command = Command::new(&vendor);
+    if dictionary
+        .get(profile_shim::PROXY_PREPARE_KEY)
+        .and_then(plist::Value::as_boolean)
+        == Some(true)
+    {
+        let host = handoff(dictionary).ok_or("Proxy-enabled wrapper is missing its host")?;
+        profile_shim::prepare_proxy(&host, &mut command)?;
+    }
     if let Some((name, value)) = &params.config_env {
         command.env(name, value);
     }

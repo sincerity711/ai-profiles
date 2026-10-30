@@ -18,6 +18,66 @@ use profile_shim::{
 
 const SHIM: &str = env!("CARGO_BIN_EXE_profile-shim");
 
+#[test]
+fn dock_launch_reads_fresh_proxy_and_refuses_a_failed_preflight() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = dir.path().join("host");
+    let config = dir.path().join("proxy.plist");
+    let mut settings = plist::Dictionary::new();
+    settings.insert(
+        "args".into(),
+        plist::Value::Array(vec![plist::Value::String(
+            "--proxy-server=http://localhost:3128".into(),
+        )]),
+    );
+    let mut env = plist::Dictionary::new();
+    env.insert(
+        "HTTPS_PROXY".into(),
+        plist::Value::String("http://localhost:3128".into()),
+    );
+    settings.insert("env".into(), plist::Value::Dictionary(env));
+    plist::Value::Dictionary(settings)
+        .to_file_xml(&config)
+        .unwrap();
+    fs::write(&host, format!("#!/bin/sh\ncat '{}'\n", config.display())).unwrap();
+    fs::set_permissions(&host, fs::Permissions::from_mode(0o755)).unwrap();
+    let w = wrapper(
+        dir.path(),
+        &[
+            (USER_DATA_DIR_KEY, "/tmp/profile data"),
+            (HOST_BINARY_KEY, host.to_str().unwrap()),
+            (PROFILE_ID_KEY, "test-profile"),
+            (VENDOR_BUNDLE_KEY, "/missing/vendor.app"),
+        ],
+    );
+    let info_path = profile_shim::info_plist_path(&w.shim).unwrap();
+    let mut info = plist::Value::from_file(&info_path).unwrap();
+    info.as_dictionary_mut().unwrap().insert(
+        profile_shim::PROXY_PREPARE_KEY.into(),
+        plist::Value::Boolean(true),
+    );
+    info.to_file_xml(&info_path).unwrap();
+    fs::write(&w.vendor_binary, "#!/bin/sh\nprintf '%s\n' \"$HTTPS_PROXY\" > \"$0.env\"\nprintf '%s\n' \"$@\" > \"$0.ran\"\n").unwrap();
+    assert!(Command::new(&w.shim).status().unwrap().success());
+    assert_eq!(
+        ran(&w.vendor_binary).unwrap(),
+        vec![
+            "--proxy-server=http://localhost:3128",
+            "--user-data-dir=/tmp/profile data"
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(format!("{}.env", w.vendor_binary.display()))
+            .unwrap()
+            .trim(),
+        "http://localhost:3128"
+    );
+    fs::remove_file(format!("{}.ran", w.vendor_binary.display())).unwrap();
+    fs::write(&host, "#!/bin/sh\necho 'Proxy unavailable' >&2\nexit 1\n").unwrap();
+    assert!(!Command::new(&w.shim).status().unwrap().success());
+    assert!(ran(&w.vendor_binary).is_none());
+}
+
 /// How long a script spawned by the shim is given to leave its mark. Generous:
 /// the point is never to wait this long, only not to race.
 const SETTLE: Duration = Duration::from_secs(10);

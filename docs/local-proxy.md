@@ -7,8 +7,12 @@ environment variables. Relaunch existing windows after changing settings. This
 is a connectivity preflight, not a network firewall or traffic watchdog.
 
 Generated plain launchers call the host with --launch-profile-direct, so
-Finder/Dock launches use current settings too. Leave Distinct Dock icon off
-when using the proxy. No vendor app is patched or re-signed.
+Finder/Dock launches use current settings too. Distinct Dock icon wrappers
+ask the host for current proxy settings and a connectivity preflight each time
+their shim starts, including direct Finder/Dock launches. Failed preparation
+stops the launch. Wrappers predating this support are rebuilt on opening from
+ai-profiles. The official vendor bundle is not patched or re-signed; distinct
+Dock copies retain upstream's ad-hoc signing and Cowork folder limitations.
 
 Imported claude-multiprofile copies carry multiprofile-import.json. Only for
 these copies, launch aligns the native egress policy and Code settings env

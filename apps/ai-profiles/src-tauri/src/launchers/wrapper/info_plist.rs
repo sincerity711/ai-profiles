@@ -84,6 +84,7 @@ pub fn patch(vendor: &Dictionary, patch: &Patch<'_>) -> AppResult<Dictionary> {
     // stops matching the vendor's. Written together: the shim only hands a
     // launch back when it has all three.
     info.insert(PROFILE_ID_KEY.into(), string(patch.profile_id));
+    info.insert(profile_shim::PROXY_PREPARE_KEY.into(), Value::Boolean(true));
     info.insert(VENDOR_BUNDLE_KEY.into(), string(patch.vendor_bundle));
     info.insert(HOST_BINARY_KEY.into(), string(patch.host_binary));
     info.insert(BUILT_BY_KEY.into(), string(patch.built_by));
