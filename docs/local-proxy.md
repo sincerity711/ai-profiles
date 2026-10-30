@@ -30,3 +30,18 @@ pnpm --filter ai-profiles tauri build --debug --no-sign --bundles app
 Keep changes on the local branch or a personal fork; origin belongs to the
 original author. Installing an upstream ai-profiles release will not contain
 this custom proxy feature.
+
+## Official app location
+
+The resolver prefers `~/Library/Application Support/ai-profiles/vendor/`
+before `/Applications`. This Mac keeps the official Claude.app in that vendor
+directory, intact and with its original signature. Friday and saturday share
+the executable, with separate profile data. Managed launchers resolve the path
+through ai-profiles and do not need regeneration.
+
+To undo the move, quit Claude and move vendor/Claude.app back to
+/Applications/Claude.app without overwriting another install. The resolver
+falls back to that location. Old claude-multiprofile launchers that hardcode
+/Applications/Claude.app must be updated or retired.
+
+This relocation does not implement downloading or replacing vendor updates.
