@@ -415,9 +415,7 @@ fn verify_bundle(app: AppKind, bundle: &Path, release: Option<&Release>) -> Resu
         return Err("Unexpected app executable".into());
     }
     let requirement = format!("anchor apple generic and identifier \"{identifier}\" and certificate leaf[subject.OU] = \"{team}\"");
-    run(Command::new("codesign")
-        .args(["--verify", "--deep", "--strict", "-R", &requirement])
-        .arg(bundle))?;
+    verify_signature(bundle, &requirement)?;
     run(Command::new("lipo")
         .args([
             "-verify_arch",
@@ -428,6 +426,14 @@ fn verify_bundle(app: AppKind, bundle: &Path, release: Option<&Release>) -> Resu
             },
         ])
         .arg(bundle.join("Contents/MacOS").join(exec)))
+}
+
+fn verify_signature(bundle: &Path, requirement: &str) -> Result<()> {
+    // -R <value> reads a requirement FILE; -R=<value> parses inline text.
+    run(Command::new("codesign")
+        .args(["--verify", "--deep", "--strict"])
+        .arg(format!("-R={requirement}"))
+        .arg(bundle))
 }
 
 fn download(app: AppKind, state: &mut Cache) -> Result<()> {
@@ -713,6 +719,17 @@ pub(crate) fn require_not_installing(app: AppKind) -> crate::error::AppResult<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn inline_signature_requirements_accept_valid_and_reject_wrong_identities() {
+        let system_binary = Path::new("/bin/ls");
+        verify_signature(system_binary, "anchor apple").unwrap();
+        assert!(verify_signature(
+            system_binary,
+            "anchor apple and identifier \"not.the.system.binary\""
+        )
+        .is_err());
+    }
     #[test]
     fn interrupted_replacement_restores_backup_and_releases_operation_lock() {
         let _test_guard = crate::test_support::APP_DIR_TEST_LOCK.lock().unwrap();
