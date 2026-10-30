@@ -261,12 +261,20 @@ pub fn open_new_instance(
     spec: &AppSpec,
     config_env: Option<(&str, &Path)>,
 ) -> AppResult<()> {
+    crate::desktop_updates::require_not_installing(if spec.cli_config_env == "CODEX_HOME" {
+        crate::app_kind::AppKind::Codex
+    } else {
+        crate::app_kind::AppKind::Claude
+    })?;
     let proxy = crate::proxy::load()?;
     proxy.check()?;
     crate::proxy::prepare_imported(Path::new(data_dir), &proxy)?;
     let resolved = crate::paths::resolve_gui_app(spec)
         .ok_or_else(|| AppError::Validation(format!("{} isn't installed", spec.display_name)))?;
     let mut command = open_command();
+    if spec.cli_config_env == "CODEX_HOME" {
+        command.env("CODEX_SPARKLE_ENABLED", "false");
+    }
     command
         .arg("-n")
         .arg("-a")
@@ -681,6 +689,7 @@ pub fn open_profile(
     version: &str,
     focus: impl FnOnce(i32),
 ) -> AppResult<Option<Bypass>> {
+    crate::desktop_updates::require_not_installing(profile.app)?;
     let spec = profile.app.spec();
     let data_dir = profile_dir(&profile.id)?
         .join("gui-data")

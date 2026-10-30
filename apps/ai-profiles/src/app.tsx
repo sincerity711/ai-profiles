@@ -26,7 +26,6 @@ import { EmptyStateScreen } from '@/features/profiles/components/empty-state-scr
 import { ProfileDetailSkeleton } from '@/features/profiles/components/profile-detail-skeleton'
 import { ProfileDialogs } from '@/features/profiles/components/profile-dialogs'
 import { SidebarSkeleton } from '@/features/profiles/components/sidebar-skeleton'
-import { UpdateToastTrigger } from '@/features/updater/components/update-toast-trigger'
 import { WhatsNewHost } from '@/features/whats-new/components/whats-new-host'
 import { wrapperCommand } from '@/lib/app-registry'
 import { useAppState } from '@/lib/app-state/use-app-state'
@@ -116,7 +115,6 @@ function AppContent() {
   return (
     <div className="relative flex h-full flex-col">
       <TitleBarDragStrip />
-      <UpdateToastTrigger />
       <PathSetupBannerHost />
       {/* The empty-state screen owns the whole window when there are no entries
           yet — no sidebar, no panes. As soon as the first profile/default entry
