@@ -34,6 +34,16 @@ DATA_DIR="{profiles_base}/{profile_id}/gui-data"
     )
 }
 
+/// Route Finder/Dock launches through the same checked native launch path.
+pub fn managed_launcher_script(profile_id: &str, host: &std::path::Path) -> String {
+    let quote = |s: &str| format!("'{}'", s.replace(char::from(39), "'\"'\"'"));
+    format!(
+        "#!/bin/sh\nexec {} --launch-profile-direct {}\n",
+        quote(&host.display().to_string()),
+        quote(profile_id)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,14 +113,4 @@ mod tests {
         ));
         assert!(script.contains(r#"export CLAUDE_CONFIG_DIR="$CONFIG_DIR""#));
     }
-}
-
-/// Route Finder/Dock launches through the same checked native launch path.
-pub fn managed_launcher_script(profile_id: &str, host: &std::path::Path) -> String {
-    let quote = |s: &str| format!("'{}'", s.replace(char::from(39), "'\"'\"'"));
-    format!(
-        "#!/bin/sh\nexec {} --launch-profile-direct {}\n",
-        quote(&host.display().to_string()),
-        quote(profile_id)
-    )
 }
