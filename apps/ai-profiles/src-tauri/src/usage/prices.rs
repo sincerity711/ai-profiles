@@ -607,16 +607,20 @@ pub(crate) mod tests {
     fn channel_models_use_their_signature_for_prices() {
         let catalog = catalog_of(litellm(), FETCHED);
         for model in [
-            "hai/gpt-5.6",
-            "aicore/gpt-5.6",
-            "github/gpt-5.6",
+            "provider-b/gpt-5.6",
+            "provider-a/gpt-5.6",
+            "provider-c/gpt-5.6",
             "gateway/channel/gpt-5.6",
-            "hai/gpt-5.6-2026-10-01",
-            "hai/claude-opus-5-5-20261001",
+            "provider-b/gpt-5.6-2026-10-01",
+            "provider-b/claude-opus-5-5-20261001",
         ] {
             assert!(catalog.model(model).is_some(), "{model}");
         }
-        for model in ["hai/unknown-model", "hai/", "hai/gpt-5.6-unknown"] {
+        for model in [
+            "provider-b/unknown-model",
+            "provider-b/",
+            "provider-b/gpt-5.6-unknown",
+        ] {
             assert!(catalog.model(model).is_none(), "{model}");
         }
     }
@@ -625,20 +629,20 @@ pub(crate) mod tests {
     fn private_openai_channels_resolve_against_the_snapshot() {
         let catalog = snapshot();
         for model in [
-            "hai/gpt-5.6-sol",
-            "hai/gpt-6-astra",
-            "aicore2/gpt-6.1-sol",
-            "github/gpt-6.1-sol",
-            "aicore/gpt-6.1-sol",
-            "hai/gpt-6.1-sol",
-            "aicore/gpt-6-astra",
-            "hai/gpt-5.6-luna",
-            "hai/gpt-6-luna",
-            "github/gpt-5.6-sol",
-            "github/gpt-5.6-luna",
-            "github/gpt-6-luna",
-            "aicore/gpt-5.6-sol",
-            "aicore2/gpt-6-astra",
+            "provider-b/gpt-5.6-sol",
+            "provider-b/gpt-6-astra",
+            "provider-d/gpt-6.1-sol",
+            "provider-c/gpt-6.1-sol",
+            "provider-a/gpt-6.1-sol",
+            "provider-b/gpt-6.1-sol",
+            "provider-a/gpt-6-astra",
+            "provider-b/gpt-5.6-luna",
+            "provider-b/gpt-6-luna",
+            "provider-c/gpt-5.6-sol",
+            "provider-c/gpt-5.6-luna",
+            "provider-c/gpt-6-luna",
+            "provider-a/gpt-5.6-sol",
+            "provider-d/gpt-6-astra",
         ] {
             let (_, signature) = model.rsplit_once('/').unwrap();
             let tokens = tokens(1_000, 100);
@@ -661,15 +665,15 @@ pub(crate) mod tests {
         let mut custom = openai_model();
         custom["input_cost_per_token"] = json!(9e-6);
         // A future catalog with channel-specific prices must keep precedence.
-        catalog.models.insert("hai/gpt-5.6".into(), custom);
+        catalog.models.insert("provider-b/gpt-5.6".into(), custom);
         let mut dated = openai_model();
         dated["input_cost_per_token"] = json!(7e-6);
         catalog.models.insert("gpt-5.6-2026-10-01".into(), dated);
         for (model, expected) in [
-            ("hai/gpt-5.6", 9.0),
-            ("hai/gpt-5.6-2026-10-01", 9.0),
-            ("github/gpt-5.6-2026-10-01", 7.0),
-            ("github/gpt-5.6", 2.0),
+            ("provider-b/gpt-5.6", 9.0),
+            ("provider-b/gpt-5.6-2026-10-01", 9.0),
+            ("provider-c/gpt-5.6-2026-10-01", 7.0),
+            ("provider-c/gpt-5.6", 2.0),
         ] {
             let cost = catalog
                 .model(model)

@@ -643,15 +643,15 @@ mod tests {
             ROLLOUT,
             &[
                 meta("t1", 0, json!({})),
-                turn_context("hai/gpt-5.6"),
+                turn_context("provider-b/gpt-5.6"),
                 count(10, one.clone(), one.clone()),
-                turn_context("aicore/gpt-5.6"),
+                turn_context("provider-a/gpt-5.6"),
                 tier("priority"),
                 count(20, usage(2_000_000, 0, 0), one.clone()),
                 turn_context("gpt-5.6"),
                 tier("default"),
                 count(30, usage(3_000_000, 0, 0), one.clone()),
-                turn_context("github/unknown-model"),
+                turn_context("provider-c/unknown-model"),
                 count(40, usage(4_000_000, 0, 0), one),
             ],
         );
@@ -665,9 +665,9 @@ mod tests {
         assert_eq!(
             models,
             [
-                ("aicore/gpt-5.6", 8.0),
+                ("provider-a/gpt-5.6", 8.0),
                 ("GPT-5.6", 4.0),
-                ("hai/gpt-5.6", 4.0),
+                ("provider-b/gpt-5.6", 4.0),
             ]
         );
         assert_usd(cost.total_usd, 16.0);
@@ -676,7 +676,7 @@ mod tests {
         assert_usd(day.total_usd, 16.0);
         assert_eq!(cost.coverage, Coverage::Partial);
         assert_eq!(cost.unpriced.len(), 1);
-        assert_eq!(cost.unpriced[0].model, "github/unknown-model");
+        assert_eq!(cost.unpriced[0].model, "provider-c/unknown-model");
         assert_eq!(cost.unpriced[0].tokens, 1_000_000);
     }
 
