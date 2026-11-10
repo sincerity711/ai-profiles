@@ -1,6 +1,7 @@
 //! Official desktop updates. Only the app-owned vendor directory is replaced;
 //! profile data and externally installed applications are never overwritten.
 mod feed;
+mod transfer;
 
 use crate::{app_kind::AppKind, paths};
 use feed::Release;
@@ -8,10 +9,10 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     process::Command,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 const MAX_ARCHIVE: u64 = 2 * 1024 * 1024 * 1024;
@@ -104,12 +105,17 @@ fn recover_transaction(app: AppKind) -> Result<()> {
 pub struct DesktopUpdate {
     app: AppKind,
     installed_version: Option<String>,
+    installed_build: Option<String>,
     installed_path: Option<String>,
     managed: bool,
     latest_version: Option<String>,
+    latest_build: Option<String>,
     update_available: bool,
     ready_version: Option<String>,
+    ready_build: Option<String>,
+    ready_outdated: bool,
     previous_version: Option<String>,
+    previous_build: Option<String>,
     running: bool,
     busy: bool,
     phase: String,
@@ -213,6 +219,7 @@ fn running_in(app: AppKind, processes: &str) -> bool {
             exec == c.macos_exec
                 || exec == format!("{}.bin", c.macos_exec)
                 || exec.starts_with(&format!("{} Helper", c.macos_exec))
+                || exec.starts_with(&format!("{} (", c.macos_exec))
         })
     })
 }
@@ -247,17 +254,9 @@ fn view(app: AppKind) -> Result<DesktopUpdate> {
     let installed = paths::resolve_gui_app(app.spec()).map(|a| a.bundle_path);
     let latest = c.latest.as_ref();
     let installed_build = installed.as_deref().and_then(build);
-    let available = latest
-        .map(|r| {
-            installed_build
-                .as_deref()
-                .map(|v| feed::newer(&r.build, v))
-                .transpose()
-        })
-        .transpose()?
-        .flatten()
-        .unwrap_or(latest.is_some());
+    let available = update_available(latest, installed_build.as_deref())?;
     let ready: Option<Release> = read_json(&root(app)?.join("ready/release.json"))?;
+    let ready_outdated = ready_outdated(latest, ready.as_ref())?;
     let is_busy = busy(app)?;
     let interrupted = !is_busy
         && matches!(
@@ -267,12 +266,17 @@ fn view(app: AppKind) -> Result<DesktopUpdate> {
     Ok(DesktopUpdate {
         app,
         installed_version: installed.as_deref().and_then(version),
+        installed_build,
         installed_path: installed.as_ref().map(|p| p.display().to_string()),
         managed: installed.as_ref() == Some(&target(app)?),
         latest_version: latest.map(|r| r.version.clone()),
+        latest_build: latest.map(|r| r.build.clone()),
         update_available: available,
-        ready_version: ready.map(|r| r.version),
+        ready_version: ready.as_ref().map(|r| r.version.clone()),
+        ready_build: ready.map(|r| r.build),
+        ready_outdated,
         previous_version: version(&root(app)?.join("previous/App.app")),
+        previous_build: build(&root(app)?.join("previous/App.app")),
         running: running(app)?,
         busy: is_busy,
         phase: if interrupted {
@@ -291,11 +295,43 @@ fn view(app: AppKind) -> Result<DesktopUpdate> {
     })
 }
 
+fn update_available(latest: Option<&Release>, installed_build: Option<&str>) -> Result<bool> {
+    match (latest, installed_build) {
+        // Compare CFBundleVersion with the feed build, never its display version.
+        (Some(release), Some(installed)) => feed::newer(&release.build, installed),
+        (Some(_), None) => Ok(true),
+        (None, _) => Ok(false),
+    }
+}
+
+fn ready_outdated(latest: Option<&Release>, ready: Option<&Release>) -> Result<bool> {
+    match (latest, ready) {
+        (Some(latest), Some(ready)) => feed::newer(&latest.build, &ready.build),
+        _ => Ok(false),
+    }
+}
+
+fn verify_release_version(info: &plist::Dictionary, release: &Release) -> Result<()> {
+    if !feed::same_version(&field(info, "CFBundleVersion")?, &release.build)?
+        || !feed::same_version(
+            &field(info, "CFBundleShortVersionString")?,
+            &release.version,
+        )?
+    {
+        return Err("Downloaded app version does not match the update feed".into());
+    }
+    Ok(())
+}
+
 fn client(app: AppKind) -> Result<reqwest::blocking::Client> {
     let settings = crate::proxy::load().map_err(|e| e.message())?;
     settings.check().map_err(|e| e.message())?;
     let mut builder = reqwest::blocking::Client::builder()
         .no_proxy()
+        // Range offsets must refer to the exact archive bytes on disk.
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
         .user_agent("ai-profiles/1.5 desktop-updates")
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(1800))
@@ -391,11 +427,7 @@ fn verify_bundle(app: AppKind, bundle: &Path, release: Option<&Release>) -> Resu
         return Err("Downloaded app has the wrong product identity".into());
     }
     if let Some(release) = release {
-        if field(&i, "CFBundleVersion")? != release.build
-            || field(&i, "CFBundleShortVersionString")? != release.version
-        {
-            return Err("Downloaded app version does not match the update feed".into());
-        }
+        verify_release_version(&i, release)?;
     }
     if let Some(min) = i
         .get("LSMinimumSystemVersion")
@@ -442,46 +474,24 @@ fn download(app: AppKind, state: &mut Cache) -> Result<()> {
     if release.size.is_some_and(|s| s > MAX_ARCHIVE) {
         return Err("Update archive exceeds the 2 GB download limit".into());
     }
+    let partial = root(app)?.join("download");
+    state.phase = "downloading".into();
+    let archive = transfer::download_verified(
+        app,
+        &client(app)?,
+        &release,
+        &partial,
+        |downloaded, total| {
+            state.downloaded = downloaded;
+            state.total = total;
+            save(app, state)
+        },
+    )?;
+    state.phase = "verifying".into();
+    save(app, state)?;
     let work = root(app)?.join(format!("download-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     let result = (|| {
-        let mut response = client(app)?
-            .get(&release.url)
-            .send()
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| e.to_string())?;
-        state.phase = "downloading".into();
-        state.downloaded = 0;
-        state.total = release.size.or(response.content_length());
-        save(app, state)?;
-        let archive = work.join("update.zip");
-        let mut file = File::create(&archive).map_err(|e| e.to_string())?;
-        let mut buffer = vec![0; 256 * 1024];
-        let mut last = Instant::now();
-        loop {
-            let n = response.read(&mut buffer).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            state.downloaded += n as u64;
-            if state.downloaded > MAX_ARCHIVE {
-                return Err("Update archive exceeds the download limit".into());
-            }
-            file.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
-            if last.elapsed() > Duration::from_millis(400) {
-                save(app, state)?;
-                last = Instant::now();
-            }
-        }
-        file.sync_all().map_err(|e| e.to_string())?;
-        drop(file);
-        state.phase = "verifying".into();
-        save(app, state)?;
-        feed::verify_archive(
-            app,
-            &release,
-            &fs::read(&archive).map_err(|e| e.to_string())?,
-        )?;
         let unpacked = work.join("unpacked");
         fs::create_dir(&unpacked).map_err(|e| e.to_string())?;
         run(Command::new("ditto")
@@ -498,7 +508,6 @@ fn download(app: AppKind, state: &mut Cache) -> Result<()> {
         }
         verify_bundle(app, &bundles[0], Some(&release))?;
         fs::rename(&bundles[0], work.join("App.app")).map_err(|e| e.to_string())?;
-        fs::remove_file(&archive).map_err(|e| e.to_string())?;
         fs::remove_dir_all(&unpacked).map_err(|e| e.to_string())?;
         write_json(&work.join("release.json"), &release)?;
         let ready = root(app)?.join("ready");
@@ -506,6 +515,7 @@ fn download(app: AppKind, state: &mut Cache) -> Result<()> {
             fs::remove_dir_all(&ready).map_err(|e| e.to_string())?;
         }
         fs::rename(&work, ready).map_err(|e| e.to_string())?;
+        let _ = fs::remove_dir_all(&partial);
         state.phase = "ready".into();
         save(app, state)
     })();
@@ -539,7 +549,6 @@ fn replace_bundle(incoming: &Path, destination: &Path, previous: &Path) -> Resul
 }
 
 fn install(app: AppKind, state: &mut Cache, rollback: bool) -> Result<()> {
-    require_closed(app)?;
     let dir = root(app)?;
     let source = dir.join(if rollback {
         "previous/App.app"
@@ -554,6 +563,10 @@ fn install(app: AppKind, state: &mut Cache, rollback: bool) -> Result<()> {
     if !source.is_dir() || (!rollback && release.is_none()) {
         return Err("Download and verify a release before installing".into());
     }
+    if !rollback && ready_outdated(state.latest.as_ref(), release.as_ref())? {
+        return Err("A newer release is available. Download the latest update before installing. Your existing download is kept until its replacement is verified.".into());
+    }
+    require_closed(app)?;
     verify_bundle(app, &source, release.as_ref())?;
     if !rollback {
         if let (Some(current), Some(release)) = (
@@ -719,6 +732,135 @@ pub(crate) fn require_not_installing(app: AppKind) -> crate::error::AppResult<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn release(version: &str, build: &str) -> Release {
+        Release {
+            version: version.into(),
+            build: build.into(),
+            url: String::new(),
+            size: None,
+            sha256: None,
+            signature: None,
+        }
+    }
+
+    #[test]
+    fn version_checks_normalize_format_but_keep_builds_distinct() {
+        let release = release("26.1027.61615", "24141");
+        assert!(!update_available(Some(&release), Some("024141.0")).unwrap());
+        assert!(!update_available(Some(&release), Some("24142")).unwrap());
+        assert!(update_available(Some(&release), Some("24140")).unwrap());
+        let mut info = plist::Dictionary::new();
+        info.insert(
+            "CFBundleShortVersionString".into(),
+            "26.1027.61615.0".into(),
+        );
+        info.insert("CFBundleVersion".into(), "024141.0".into());
+        verify_release_version(&info, &release).unwrap();
+        info.insert("CFBundleVersion".into(), "24140".into());
+        assert!(verify_release_version(&info, &release).is_err());
+        info.insert("CFBundleVersion".into(), "24141".into());
+        info.insert("CFBundleShortVersionString".into(), "26.1027.30824".into());
+        assert!(verify_release_version(&info, &release).is_err());
+    }
+
+    #[test]
+    fn staged_release_follows_the_latest_build_not_the_display_version() {
+        let latest = release("26.1027.61615", "24141");
+        assert!(ready_outdated(Some(&latest), Some(&release("26.1027.61615", "24140"))).unwrap());
+        assert!(
+            !ready_outdated(Some(&latest), Some(&release("26.1027.61615", "024141.0"))).unwrap()
+        );
+        assert!(!ready_outdated(Some(&latest), Some(&release("26.1103.60933", "25894"))).unwrap());
+        assert!(!ready_outdated(None, Some(&latest)).unwrap());
+        assert!(!ready_outdated(Some(&latest), None).unwrap());
+    }
+
+    #[test]
+    fn outdated_download_is_reported_and_refused_without_discarding_it() {
+        let _test_guard = crate::test_support::APP_DIR_TEST_LOCK.lock().unwrap();
+        let app = AppKind::Codex;
+        let dir = root(app).unwrap();
+        let ready = dir.join("ready");
+        fs::create_dir_all(ready.join("App.app")).unwrap();
+        write_json(
+            &ready.join("release.json"),
+            &release("26.1027.61615", "24141"),
+        )
+        .unwrap();
+        let mut state = Cache {
+            latest: Some(release("26.1103.60933", "25894")),
+            ..Cache::default()
+        };
+        save(app, &state).unwrap();
+        let status = view(app).unwrap();
+        assert!(status.ready_outdated);
+        assert_eq!(status.ready_build.as_deref(), Some("24141"));
+        assert_eq!(status.latest_build.as_deref(), Some("25894"));
+        assert!(install(app, &mut state, false)
+            .unwrap_err()
+            .contains("Download the latest update"));
+        assert!(ready.join("App.app").exists());
+        assert!(!dir.join("transaction.json").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn replacing_managed_bundle_clears_update_offer_for_both_version_schemes() {
+        let _test_guard = crate::test_support::APP_DIR_TEST_LOCK.lock().unwrap();
+        for (app, release, old_version, old_build) in [
+            (
+                AppKind::Claude,
+                release("4.4212.0", "4.4212.0"),
+                "2.42304.0",
+                "2.42304.0",
+            ),
+            (
+                AppKind::Codex,
+                release("26.1027.61615", "24141"),
+                "26.1027.61615",
+                "24140",
+            ),
+        ] {
+            let write_bundle = |path: &Path, version: &str, build: &str| {
+                fs::create_dir_all(path.join("Contents")).unwrap();
+                let mut info = plist::Dictionary::new();
+                info.insert("CFBundleShortVersionString".into(), version.into());
+                info.insert("CFBundleVersion".into(), build.into());
+                plist::Value::Dictionary(info)
+                    .to_file_xml(path.join("Contents/Info.plist"))
+                    .unwrap();
+            };
+            let dir = root(app).unwrap();
+            fs::create_dir_all(&dir).unwrap();
+            let destination = target(app).unwrap();
+            write_bundle(&destination, old_version, old_build);
+            save(
+                app,
+                &Cache {
+                    latest: Some(release.clone()),
+                    ..Cache::default()
+                },
+            )
+            .unwrap();
+            assert!(view(app).unwrap().update_available);
+            let temp = tempfile::tempdir().unwrap();
+            let incoming = temp.path().join("Incoming.app");
+            write_bundle(&incoming, &release.version, &format!("{}.0", release.build));
+            replace_bundle(&incoming, &destination, &temp.path().join("Previous.app")).unwrap();
+            let status = view(app).unwrap();
+            assert!(status.managed);
+            assert!(!status.update_available);
+            assert_eq!(
+                status.installed_version.as_deref(),
+                Some(release.version.as_str())
+            );
+            assert_eq!(status.latest_build.as_deref(), Some(release.build.as_str()));
+            fs::remove_dir_all(dir).unwrap();
+            fs::remove_dir_all(destination).unwrap();
+        }
+    }
+
     #[test]
     #[cfg(target_os = "macos")]
     fn inline_signature_requirements_accept_valid_and_reject_wrong_identities() {
@@ -795,6 +937,11 @@ mod tests {
             AppKind::Codex,
             "/Applications/Codex.app/Contents/MacOS/Codex Helper"
         ));
+        for helper in ["Codex (Renderer)", "Codex (Service)"] {
+            assert!(running_in(AppKind::Codex, &format!(
+                "/Users/a/ChatGPT (personal).app/Contents/Frameworks/Codex Framework.framework/Helpers/{helper}.app/Contents/MacOS/{helper}"
+            )));
+        }
         assert!(!running_in(
             AppKind::Claude,
             "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"

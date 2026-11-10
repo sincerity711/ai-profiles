@@ -68,5 +68,24 @@ Headless diagnostics use:
 
     ai-profiles --desktop-update status|check|download|install|rollback claude|codex
 
-Use the UI for normal operation. A failed download can be retried; downloads
-are currently restarted rather than resumed from a partial archive.
+Use the UI for normal operation. Retrying a failed download resumes the partial
+archive in each app's `download/` directory, including after restarting the app.
+The saved release URL, version, size and checksum/signature must still match.
+The server's byte range and total size are checked before appending; if it ignores
+or refuses ranges, the download restarts safely. A failed checksum/signature
+discards the corrupt archive so the next retry can fetch a clean copy.
+
+Downloaded and verified means ready to install, not already installed. Status
+reads the actual managed bundle after installation. Update checks compare the
+feed build with `CFBundleVersion`; display versions and build numbers are shown
+separately when they differ (as with ChatGPT). Numeric formatting differences
+such as `1.0` and `1.0.0` are treated as equal during comparison and verification,
+while a higher build of the same display version is still offered as an update.
+
+If a check finds a newer build than the verified download, the UI offers
+Download latest update instead of installing the outdated package. The backend
+also refuses that outdated installation. The old verified package is retained
+until the replacement is verified; downloading remains available while desktop
+instances are running. Install and restore still require all instances and
+their Renderer/Service helpers to exit. Installed refers to the managed vendor
+bundle; profile copies rebuild from it the next time they are opened.

@@ -9,12 +9,17 @@ import { extractErrorMessage } from '@/lib/extract-error-message'
 export type DesktopUpdate = {
   app: AppId
   installedVersion: string | null
+  installedBuild: string | null
   installedPath: string | null
   managed: boolean
   latestVersion: string | null
+  latestBuild: string | null
   updateAvailable: boolean
   readyVersion: string | null
+  readyBuild: string | null
+  readyOutdated: boolean
   previousVersion: string | null
+  previousBuild: string | null
   running: boolean
   busy: boolean
   phase: string
@@ -34,6 +39,8 @@ const phases: Record<string, string> = {
   restored: 'Previous version restored. Open a profile to use it.',
 }
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
+const displayVersion = (version: string | null, build: string | null) =>
+  build && build !== version ? `${version} (build ${build})` : version
 
 export function DesktopUpdatesSection() {
   const [apps, setApps] = useState<Array<DesktopUpdate> | null>(null)
@@ -74,8 +81,9 @@ export function DesktopUpdatesSection() {
         Desktop app updates
       </h3>
       <p className="mb-4 text-sm text-muted">
-        Official releases, checked every six hours while ai-profiles is open. Downloads use your saved proxy. Install
-        when all instances are closed; account data stays in place.
+        Official releases, checked every six hours while ai-profiles is open. Downloads use your saved proxy; retrying
+        an interrupted download resumes it when supported. Install when all instances are closed; account data stays in
+        place.
       </p>
       {loadError && (
         <p role="alert" className="mb-3 text-sm text-red">
@@ -97,7 +105,9 @@ export function DesktopUpdatesSection() {
         const status = row.busy
           ? phases[row.phase]
           : row.readyVersion
-            ? `Version ${row.readyVersion} is verified and ready to install.`
+            ? row.readyOutdated
+              ? `Downloaded ${displayVersion(row.readyVersion, row.readyBuild)} is older than the latest release. Download the latest update before installing.`
+              : `Version ${displayVersion(row.readyVersion, row.readyBuild)} is downloaded and verified. Install it to finish updating.`
             : phases[row.phase]
         const installBlocked = working || row.running
         return (
@@ -105,13 +115,15 @@ export function DesktopUpdatesSection() {
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h4 className="font-medium text-ink">{name}</h4>
               <span className="text-sm tabular-nums text-muted">
-                {row.installedVersion ? `Installed ${row.installedVersion}` : 'Not installed'}
+                {row.installedVersion
+                  ? `Installed ${displayVersion(row.installedVersion, row.installedBuild)}`
+                  : 'Not installed'}
               </span>
             </div>
             <p className="mt-1 text-sm text-muted">
               {row.latestVersion
                 ? row.updateAvailable
-                  ? `Version ${row.latestVersion} available`
+                  ? `Version ${displayVersion(row.latestVersion, row.latestBuild)} available`
                   : 'Latest compatible release installed'
                 : 'Check for a compatible release'}
               {row.installedVersion && !row.managed ? ' · External installation' : ''}
@@ -120,18 +132,26 @@ export function DesktopUpdatesSection() {
               <Button size="sm" variant="secondary" disabled={working} onClick={() => void act(row.app, 'check')}>
                 Check for updates
               </Button>
-              {row.latestVersion && !row.readyVersion && (row.updateAvailable || !row.managed) && (
-                <Button size="sm" disabled={working} onClick={() => void act(row.app, 'download')}>
-                  {pending[row.app] === 'download'
-                    ? 'Preparing download…'
-                    : row.updateAvailable
-                      ? 'Download update'
-                      : 'Download managed copy'}
-                </Button>
-              )}
-              {row.readyVersion && (
+              {row.latestVersion &&
+                (!row.readyVersion || row.readyOutdated) &&
+                (row.updateAvailable || !row.managed) && (
+                  <Button size="sm" disabled={working} onClick={() => void act(row.app, 'download')}>
+                    {row.busy && row.phase === 'downloading'
+                      ? 'Downloading…'
+                      : row.busy && row.phase === 'verifying'
+                        ? 'Verifying…'
+                        : pending[row.app] === 'download'
+                          ? 'Preparing download…'
+                          : row.readyOutdated
+                            ? 'Download latest update'
+                            : row.updateAvailable
+                              ? 'Download update'
+                              : 'Download managed copy'}
+                  </Button>
+                )}
+              {row.readyVersion && !row.readyOutdated && (
                 <Button size="sm" disabled={installBlocked} onClick={() => void act(row.app, 'install')}>
-                  Install {row.readyVersion}
+                  Install {displayVersion(row.readyVersion, row.readyBuild)}
                 </Button>
               )}
               {row.previousVersion && (
@@ -141,7 +161,7 @@ export function DesktopUpdatesSection() {
                   disabled={installBlocked}
                   onClick={() => void act(row.app, 'rollback')}
                 >
-                  Restore {row.previousVersion}
+                  Restore {displayVersion(row.previousVersion, row.previousBuild)}
                 </Button>
               )}
             </div>
@@ -164,7 +184,7 @@ export function DesktopUpdatesSection() {
                 </p>
               </div>
             )}
-            {row.running && (row.readyVersion || row.previousVersion) && (
+            {row.running && ((row.readyVersion && !row.readyOutdated) || row.previousVersion) && (
               <p className="mt-2 text-sm text-muted">
                 Quit {name} and all its profile instances to install or restore. Your download is kept.
               </p>

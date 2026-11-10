@@ -9,7 +9,7 @@ pub const CLAUDE_FEED: &str =
 pub const CODEX_FEED: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
 const CODEX_KEY: &str = "mNfr1v9t63BfgDtlw4C8lRvSY6uMggIXABDOCi3tS6k=";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Release {
     pub version: String,
@@ -31,12 +31,20 @@ pub fn version_parts(version: &str) -> Result<Vec<u64>, String> {
 }
 
 pub fn newer(candidate: &str, installed: &str) -> Result<bool, String> {
+    Ok(compare_versions(candidate, installed)?.is_gt())
+}
+
+pub fn same_version(a: &str, b: &str) -> Result<bool, String> {
+    Ok(compare_versions(a, b)?.is_eq())
+}
+
+fn compare_versions(candidate: &str, installed: &str) -> Result<std::cmp::Ordering, String> {
     let mut a = version_parts(candidate)?;
     let mut b = version_parts(installed)?;
     let n = a.len().max(b.len());
     a.resize(n, 0);
     b.resize(n, 0);
-    Ok(a > b)
+    Ok(a.cmp(&b))
 }
 
 pub fn allowed_url(app: AppKind, url: &reqwest::Url) -> bool {
