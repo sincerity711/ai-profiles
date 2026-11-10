@@ -204,12 +204,10 @@ pub fn prepare_profile_launch(id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
 pub fn get_desktop_proxy() -> AppResult<ProxySettings> {
     load()
 }
 
-#[tauri::command]
 pub async fn save_desktop_proxy(settings: ProxySettings) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         if settings.enabled {
@@ -224,7 +222,6 @@ pub async fn save_desktop_proxy(settings: ProxySettings) -> AppResult<()> {
     .map_err(|e| AppError::Validation(e.to_string()))?
 }
 
-#[tauri::command]
 pub async fn test_desktop_proxy(settings: ProxySettings) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || settings.check())
         .await

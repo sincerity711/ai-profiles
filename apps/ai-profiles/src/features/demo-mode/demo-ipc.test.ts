@@ -1,7 +1,18 @@
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { archiveSession, listProfiles, listSessions, loadAppState, updateAppState } from '@/lib/commands'
+import {
+  archiveSession,
+  desktopUpdateAction,
+  getDesktopProxy,
+  getDesktopUpdates,
+  listProfiles,
+  listSessions,
+  loadAppState,
+  saveDesktopProxy,
+  testDesktopProxy,
+  updateAppState,
+} from '@/lib/commands'
 
 import { createDemoInvoke, installDemoIpc, routeCommand, setDemoEnabled } from './demo-ipc'
 
@@ -60,6 +71,17 @@ describe('demo IPC', () => {
     const profiles = await listProfiles()
 
     expect(profiles.length).toBeGreaterThan(0)
+    expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it('isolates desktop updates and proxy settings from the real machine while on', async () => {
+    setDemoEnabled(true)
+    expect(await getDesktopUpdates()).toEqual([])
+    const proxy = await getDesktopProxy()
+    expect(proxy.enabled).toBe(false)
+    await expect(desktopUpdateAction('codex', 'download')).rejects.toMatchObject({ kind: 'Validation' })
+    await expect(saveDesktopProxy(proxy)).rejects.toMatchObject({ kind: 'Validation' })
+    await expect(testDesktopProxy(proxy)).rejects.toMatchObject({ kind: 'Validation' })
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 

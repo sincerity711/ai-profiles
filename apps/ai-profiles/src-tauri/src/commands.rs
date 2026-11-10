@@ -931,3 +931,31 @@ pub async fn restore_session(
 ) -> AppResult<()> {
     sessions::actions::restore(&profile_id, &session_id, quit_app).await
 }
+
+#[tauri::command]
+pub fn get_desktop_updates() -> Result<Vec<crate::desktop_updates::DesktopUpdate>, String> {
+    crate::desktop_updates::get_desktop_updates()
+}
+
+#[tauri::command]
+pub async fn desktop_update_action(
+    app: AppKind,
+    action: String,
+) -> Result<crate::desktop_updates::DesktopUpdate, String> {
+    crate::desktop_updates::desktop_update_action(app, action).await
+}
+
+#[tauri::command]
+pub fn get_desktop_proxy() -> AppResult<crate::proxy::ProxySettings> {
+    crate::proxy::get_desktop_proxy()
+}
+
+#[tauri::command]
+pub async fn save_desktop_proxy(settings: crate::proxy::ProxySettings) -> AppResult<()> {
+    crate::proxy::save_desktop_proxy(settings).await
+}
+
+#[tauri::command]
+pub async fn test_desktop_proxy(settings: crate::proxy::ProxySettings) -> AppResult<()> {
+    crate::proxy::test_desktop_proxy(settings).await
+}

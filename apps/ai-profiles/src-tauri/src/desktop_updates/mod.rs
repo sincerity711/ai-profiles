@@ -670,7 +670,6 @@ pub fn perform(action: &str, app: AppKind) -> Result<DesktopUpdate> {
     view(app)
 }
 
-#[tauri::command]
 pub fn get_desktop_updates() -> Result<Vec<DesktopUpdate>> {
     [AppKind::Claude, AppKind::Codex]
         .into_iter()
@@ -678,7 +677,6 @@ pub fn get_desktop_updates() -> Result<Vec<DesktopUpdate>> {
         .collect()
 }
 
-#[tauri::command]
 pub async fn desktop_update_action(app: AppKind, action: String) -> Result<DesktopUpdate> {
     tauri::async_runtime::spawn_blocking(move || perform(&action, app))
         .await

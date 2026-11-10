@@ -96,9 +96,12 @@ function primeInitialLoads({
       const app = (args as { app?: string } | undefined)?.app
       return app === 'codex' ? DEFAULT_EXISTING : existing
     }
-    if (command === 'get_app_metadata') {
-      return metadata
+    const desktopReads: Record<string, unknown> = {
+      get_app_metadata: metadata,
+      get_desktop_updates: [],
+      get_desktop_proxy: { enabled: false, url: '', noProxy: 'localhost' },
     }
+    if (command in desktopReads) return desktopReads[command]
     throw new Error(`unexpected command in test: ${command}`)
   })
 }

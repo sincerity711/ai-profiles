@@ -119,11 +119,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            desktop_updates::get_desktop_updates,
-            desktop_updates::desktop_update_action,
-            proxy::get_desktop_proxy,
-            proxy::save_desktop_proxy,
-            proxy::test_desktop_proxy,
+            commands::get_desktop_updates,
+            commands::desktop_update_action,
+            commands::get_desktop_proxy,
+            commands::save_desktop_proxy,
+            commands::test_desktop_proxy,
             commands::list_profiles,
             commands::create_profile,
             commands::regenerate_launchers,

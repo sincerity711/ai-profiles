@@ -1,8 +1,10 @@
+import type { DesktopUpdate } from '@/lib/types'
+
 import { invoke } from '@tauri-apps/api/core'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
-import { type DesktopUpdate, DesktopUpdatesSection } from './desktop-updates-section'
+import { DesktopUpdatesSection } from './desktop-updates-section'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 const row: DesktopUpdate = {

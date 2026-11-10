@@ -2,6 +2,33 @@ import type { AppId } from './app-registry'
 
 export type { AppId } from './app-registry'
 
+export type DesktopUpdate = {
+  app: AppId
+  installedVersion: string | null
+  installedBuild: string | null
+  installedPath: string | null
+  managed: boolean
+  latestVersion: string | null
+  latestBuild: string | null
+  updateAvailable: boolean
+  readyVersion: string | null
+  readyBuild: string | null
+  readyOutdated: boolean
+  previousVersion: string | null
+  previousBuild: string | null
+  running: boolean
+  busy: boolean
+  phase: string
+  downloaded: number
+  total: number | null
+  checkedAt: string | null
+  error: string | null
+}
+
+export type DesktopUpdateAction = 'check' | 'download' | 'install' | 'rollback'
+
+export type ProxySettings = { enabled: boolean; url: string; noProxy: string }
+
 export type Surfaces = {
   gui: boolean
   cli: boolean

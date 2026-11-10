@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import type { ProxySettings } from '@/lib/types'
 
-import { invoke } from '@tauri-apps/api/core'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/design'
 import { Input } from '@/design/ui/input'
+import { getDesktopProxy, saveDesktopProxy, testDesktopProxy } from '@/lib/commands'
 import { extractErrorMessage } from '@/lib/extract-error-message'
-
-type ProxySettings = { enabled: boolean; url: string; noProxy: string }
 
 export function ProxySection() {
   const [settings, setSettings] = useState<ProxySettings | null>(null)
@@ -15,7 +14,7 @@ export function ProxySection() {
   const [error, setError] = useState(false)
   const load = useCallback(async () => {
     try {
-      setSettings(await invoke<ProxySettings>('get_desktop_proxy'))
+      setSettings(await getDesktopProxy())
       setError(false)
       setMessage('')
     } catch (e) {
@@ -26,11 +25,12 @@ export function ProxySection() {
   useEffect(() => {
     void load()
   }, [load])
-  async function run(command: string) {
+  async function run(command: 'save_desktop_proxy' | 'test_desktop_proxy') {
+    if (!settings) return
     setBusy(true)
     setMessage('')
     try {
-      await invoke(command, { settings })
+      await (command === 'save_desktop_proxy' ? saveDesktopProxy(settings) : testDesktopProxy(settings))
       setError(false)
       setMessage(
         command === 'save_desktop_proxy' ? 'Saved. Relaunch desktop profiles to apply.' : 'Proxy port is reachable.',

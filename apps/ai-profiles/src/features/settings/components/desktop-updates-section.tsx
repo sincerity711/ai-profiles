@@ -1,33 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import type { DesktopUpdate, DesktopUpdateAction } from '@/lib/types'
 
-import { invoke } from '@tauri-apps/api/core'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/design'
 import { type AppId, appSpecs } from '@/lib/app-registry'
+import { desktopUpdateAction, getDesktopUpdates } from '@/lib/commands'
 import { extractErrorMessage } from '@/lib/extract-error-message'
-
-export type DesktopUpdate = {
-  app: AppId
-  installedVersion: string | null
-  installedBuild: string | null
-  installedPath: string | null
-  managed: boolean
-  latestVersion: string | null
-  latestBuild: string | null
-  updateAvailable: boolean
-  readyVersion: string | null
-  readyBuild: string | null
-  readyOutdated: boolean
-  previousVersion: string | null
-  previousBuild: string | null
-  running: boolean
-  busy: boolean
-  phase: string
-  downloaded: number
-  total: number | null
-  checkedAt: string | null
-  error: string | null
-}
 
 const phases: Record<string, string> = {
   checking: 'Checking official releases…',
@@ -49,7 +27,7 @@ export function DesktopUpdatesSection() {
   const [loadError, setLoadError] = useState('')
   const load = useCallback(async () => {
     try {
-      const rows = await invoke<Array<DesktopUpdate>>('get_desktop_updates')
+      const rows = await getDesktopUpdates()
       setApps(Array.isArray(rows) ? rows : [])
       setLoadError('')
     } catch (error) {
@@ -62,11 +40,11 @@ export function DesktopUpdatesSection() {
     return () => clearInterval(timer)
   }, [load])
 
-  async function act(app: AppId, action: string) {
+  async function act(app: AppId, action: DesktopUpdateAction) {
     setPending((p) => ({ ...p, [app]: action }))
     setErrors((p) => ({ ...p, [app]: '' }))
     try {
-      await invoke('desktop_update_action', { app, action })
+      await desktopUpdateAction(app, action)
     } catch (error) {
       setErrors((p) => ({ ...p, [app]: extractErrorMessage(error) }))
     } finally {
@@ -98,116 +76,155 @@ export function DesktopUpdatesSection() {
           Loading installed apps…
         </p>
       )}
-      {apps?.map((row) => {
-        const name = appSpecs[row.app].displayName
-        const working = row.busy || Boolean(pending[row.app])
-        const error = errors[row.app] || row.error
-        const status = row.busy
-          ? phases[row.phase]
-          : row.readyVersion
-            ? row.readyOutdated
-              ? `Downloaded ${displayVersion(row.readyVersion, row.readyBuild)} is older than the latest release. Download the latest update before installing.`
-              : `Version ${displayVersion(row.readyVersion, row.readyBuild)} is downloaded and verified. Install it to finish updating.`
-            : phases[row.phase]
-        const installBlocked = working || row.running
-        return (
-          <section key={row.app} className="border-t border-border-soft py-4" aria-label={`${name} updates`}>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h4 className="font-medium text-ink">{name}</h4>
-              <span className="text-sm tabular-nums text-muted">
-                {row.installedVersion
-                  ? `Installed ${displayVersion(row.installedVersion, row.installedBuild)}`
-                  : 'Not installed'}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-muted">
-              {row.latestVersion
-                ? row.updateAvailable
-                  ? `Version ${displayVersion(row.latestVersion, row.latestBuild)} available`
-                  : 'Latest compatible release installed'
-                : 'Check for a compatible release'}
-              {row.installedVersion && !row.managed ? ' · External installation' : ''}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" disabled={working} onClick={() => void act(row.app, 'check')}>
-                Check for updates
-              </Button>
-              {row.latestVersion &&
-                (!row.readyVersion || row.readyOutdated) &&
-                (row.updateAvailable || !row.managed) && (
-                  <Button size="sm" disabled={working} onClick={() => void act(row.app, 'download')}>
-                    {row.busy && row.phase === 'downloading'
-                      ? 'Downloading…'
-                      : row.busy && row.phase === 'verifying'
-                        ? 'Verifying…'
-                        : pending[row.app] === 'download'
-                          ? 'Preparing download…'
-                          : row.readyOutdated
-                            ? 'Download latest update'
-                            : row.updateAvailable
-                              ? 'Download update'
-                              : 'Download managed copy'}
-                  </Button>
-                )}
-              {row.readyVersion && !row.readyOutdated && (
-                <Button size="sm" disabled={installBlocked} onClick={() => void act(row.app, 'install')}>
-                  Install {displayVersion(row.readyVersion, row.readyBuild)}
-                </Button>
-              )}
-              {row.previousVersion && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={installBlocked}
-                  onClick={() => void act(row.app, 'rollback')}
-                >
-                  Restore {displayVersion(row.previousVersion, row.previousBuild)}
-                </Button>
-              )}
-            </div>
-            {status && (
-              <p role="status" className="mt-2 text-sm text-ink-soft">
-                {status}
-              </p>
-            )}
-            {row.busy && row.phase === 'downloading' && (
-              <div className="mt-2">
-                <progress
-                  className="h-1.5 w-full accent-ink"
-                  aria-label={`${name} download progress`}
-                  value={row.total ? row.downloaded : undefined}
-                  max={row.total ?? undefined}
-                />
-                <p className="mt-1 text-sm tabular-nums text-muted">
-                  {mb(row.downloaded)}
-                  {row.total ? ` / ${mb(row.total)}` : ''}
-                </p>
-              </div>
-            )}
-            {row.running && ((row.readyVersion && !row.readyOutdated) || row.previousVersion) && (
-              <p className="mt-2 text-sm text-muted">
-                Quit {name} and all its profile instances to install or restore. Your download is kept.
-              </p>
-            )}
-            {row.installedVersion && !row.managed && (
-              <p className="mt-2 text-sm text-muted">
-                Installing creates an ai-profiles managed copy. Your current application is kept.
-              </p>
-            )}
-            {row.installedPath && (
-              <details className="mt-2 text-sm text-muted">
-                <summary className="cursor-pointer">App location</summary>
-                <p className="mt-1 break-all select-text">{row.installedPath}</p>
-              </details>
-            )}
-            {error && (
-              <p role="alert" className="mt-2 text-sm text-red">
-                {error}
-              </p>
-            )}
-          </section>
-        )
-      })}
+      {apps?.map((row) => (
+        <DesktopUpdateRow key={row.app} row={row} pending={pending[row.app]} error={errors[row.app]} onAction={act} />
+      ))}
     </section>
+  )
+}
+
+type UpdateRowProps = {
+  row: DesktopUpdate
+  pending?: string
+  error?: string | null
+  onAction: (app: AppId, action: DesktopUpdateAction) => Promise<void>
+}
+
+function updateStatus(row: DesktopUpdate): string | undefined {
+  if (row.busy || !row.readyVersion) return phases[row.phase]
+  const version = displayVersion(row.readyVersion, row.readyBuild)
+  return row.readyOutdated
+    ? `Downloaded ${version} is older than the latest release. Download the latest update before installing.`
+    : `Version ${version} is downloaded and verified. Install it to finish updating.`
+}
+
+function availableRelease(row: DesktopUpdate): string {
+  if (!row.latestVersion) return 'Check for a compatible release'
+  return row.updateAvailable
+    ? `Version ${displayVersion(row.latestVersion, row.latestBuild)} available`
+    : 'Latest compatible release installed'
+}
+
+function canInstall(row: DesktopUpdate): boolean {
+  return Boolean(row.readyVersion) && !row.readyOutdated
+}
+
+function canDownload(row: DesktopUpdate): boolean {
+  return Boolean(row.latestVersion) && !canInstall(row) && (row.updateAvailable || !row.managed)
+}
+
+function downloadLabel(row: DesktopUpdate, pending?: string): string {
+  if (row.busy && row.phase === 'downloading') return 'Downloading…'
+  if (row.busy && row.phase === 'verifying') return 'Verifying…'
+  if (pending === 'download') return 'Preparing download…'
+  if (row.readyOutdated) return 'Download latest update'
+  return row.updateAvailable ? 'Download update' : 'Download managed copy'
+}
+
+function DesktopUpdateRow({ row, pending, error: actionError, onAction }: UpdateRowProps) {
+  const name = appSpecs[row.app].displayName
+  const working = row.busy || Boolean(pending)
+  const error = actionError || row.error
+  const status = updateStatus(row)
+  return (
+    <section className="border-t border-border-soft py-4" aria-label={`${name} updates`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h4 className="font-medium text-ink">{name}</h4>
+        <span className="text-sm tabular-nums text-muted">
+          {row.installedVersion
+            ? `Installed ${displayVersion(row.installedVersion, row.installedBuild)}`
+            : 'Not installed'}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        {availableRelease(row)}
+        {row.installedVersion && !row.managed ? ' · External installation' : ''}
+      </p>
+      <UpdateActions row={row} pending={pending} working={working} onAction={onAction} />
+      {status && (
+        <p role="status" className="mt-2 text-sm text-ink-soft">
+          {status}
+        </p>
+      )}
+      <UpdateProgress row={row} />
+      <UpdateNotices row={row} error={error} />
+    </section>
+  )
+}
+
+function UpdateActions({ row, pending, working, onAction }: Omit<UpdateRowProps, 'error'> & { working: boolean }) {
+  const installBlocked = working || row.running
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <Button size="sm" variant="secondary" disabled={working} onClick={() => void onAction(row.app, 'check')}>
+        Check for updates
+      </Button>
+      {canDownload(row) && (
+        <Button size="sm" disabled={working} onClick={() => void onAction(row.app, 'download')}>
+          {downloadLabel(row, pending)}
+        </Button>
+      )}
+      {canInstall(row) && (
+        <Button size="sm" disabled={installBlocked} onClick={() => void onAction(row.app, 'install')}>
+          Install {displayVersion(row.readyVersion, row.readyBuild)}
+        </Button>
+      )}
+      {row.previousVersion && (
+        <Button size="sm" variant="ghost" disabled={installBlocked} onClick={() => void onAction(row.app, 'rollback')}>
+          Restore {displayVersion(row.previousVersion, row.previousBuild)}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function UpdateProgress({ row }: { row: DesktopUpdate }) {
+  const name = appSpecs[row.app].displayName
+  return (
+    <>
+      {row.busy && row.phase === 'downloading' && (
+        <div className="mt-2">
+          <progress
+            className="h-1.5 w-full accent-ink"
+            aria-label={`${name} download progress`}
+            value={row.total ? row.downloaded : undefined}
+            max={row.total ?? undefined}
+          />
+          <p className="mt-1 text-sm tabular-nums text-muted">
+            {mb(row.downloaded)}
+            {row.total ? ` / ${mb(row.total)}` : ''}
+          </p>
+        </div>
+      )}
+    </>
+  )
+}
+
+function UpdateNotices({ row, error }: Pick<UpdateRowProps, 'row' | 'error'>) {
+  const name = appSpecs[row.app].displayName
+  return (
+    <>
+      {row.running && (canInstall(row) || row.previousVersion) && (
+        <p className="mt-2 text-sm text-muted">
+          Quit {name} and all its profile instances to install or restore. Your download is kept.
+        </p>
+      )}
+      {row.installedVersion && !row.managed && (
+        <p className="mt-2 text-sm text-muted">
+          Installing creates an ai-profiles managed copy. Your current application is kept.
+        </p>
+      )}
+      {row.installedPath && (
+        <details className="mt-2 text-sm text-muted">
+          <summary className="cursor-pointer">App location</summary>
+          <p className="mt-1 break-all select-text">{row.installedPath}</p>
+        </details>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red">
+          {error}
+        </p>
+      )}
+    </>
   )
 }

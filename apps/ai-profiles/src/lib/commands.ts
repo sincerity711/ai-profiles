@@ -7,6 +7,8 @@ import type {
   AppState,
   AppStatePatch,
   Dependencies,
+  DesktopUpdate,
+  DesktopUpdateAction,
   DevTheme,
   ExistingInstallInfo,
   ExistingInstallSizes,
@@ -21,6 +23,7 @@ import type {
   ProfilePatch,
   ProfilePaths,
   ProfileUsage,
+  ProxySettings,
   RepairReport,
   SessionAction,
   SessionCosts,
@@ -319,4 +322,24 @@ export function devRestoreWindow(): Promise<void> {
  */
 export function devCaptureWindow(theme: DevTheme): Promise<string> {
   return invoke<string>('dev_capture_window', { theme })
+}
+
+export function getDesktopUpdates(): Promise<Array<DesktopUpdate>> {
+  return invoke<Array<DesktopUpdate>>('get_desktop_updates')
+}
+
+export function desktopUpdateAction(app: AppId, action: DesktopUpdateAction): Promise<DesktopUpdate> {
+  return invoke<DesktopUpdate>('desktop_update_action', { app, action })
+}
+
+export function getDesktopProxy(): Promise<ProxySettings> {
+  return invoke<ProxySettings>('get_desktop_proxy')
+}
+
+export function saveDesktopProxy(settings: ProxySettings): Promise<void> {
+  return invoke('save_desktop_proxy', { settings })
+}
+
+export function testDesktopProxy(settings: ProxySettings): Promise<void> {
+  return invoke('test_desktop_proxy', { settings })
 }

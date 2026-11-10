@@ -7,6 +7,7 @@ import type {
   AppState,
   AppStatePatch,
   Dependencies,
+  DesktopUpdate,
   ExistingInstallInfo,
   ExistingInstallSizes,
   ImportExistingInput,
@@ -21,6 +22,7 @@ import type {
   ProfilePatch,
   ProfilePaths,
   ProfileUsage,
+  ProxySettings,
   RepairReport,
   Session,
   SessionCost,
@@ -543,6 +545,17 @@ type DemoHandler = (state: DemoState, args: never) => unknown
  * desktop apps, the browser) are left alone.
  */
 export const demoHandlers: Record<string, DemoHandler> = {
+  get_desktop_updates: (): Array<DesktopUpdate> => [],
+  desktop_update_action: () => {
+    throw { kind: 'Validation', message: 'Desktop updates are unavailable in demo mode.' }
+  },
+  get_desktop_proxy: (): ProxySettings => ({ enabled: false, url: '', noProxy: 'localhost,127.0.0.1,::1' }),
+  save_desktop_proxy: () => {
+    throw { kind: 'Validation', message: 'Proxy settings are unavailable in demo mode.' }
+  },
+  test_desktop_proxy: () => {
+    throw { kind: 'Validation', message: 'Proxy connections are unavailable in demo mode.' }
+  },
   list_profiles: (state): Array<Profile> => state.profiles.map(toProfile),
   create_profile: (state, input: { app: AppId; name: string; color: string; surfaces: Surfaces }): Profile =>
     addProfile(state, input.app, input.name, input.color, input.surfaces),
