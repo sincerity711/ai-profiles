@@ -225,8 +225,8 @@ pub fn version_drifted(current: &str, built_from: Option<&str>) -> bool {
 pub enum WrapperState {
     /// There is nothing at the wrapper's path.
     Missing,
-    /// It was cloned from another version of the vendor app than is installed
-    /// now.
+    /// It was cloned from another version or source of the vendor app than is
+    /// installed now, or needs refreshing for this ai-profiles version.
     Stale,
     /// It is there and matches the installed vendor.
     Current,
@@ -265,6 +265,23 @@ pub(crate) fn config_env_recorded(info: &Dictionary) -> bool {
     })
 }
 
+/// Whether the shim would compare against a different vendor than the host.
+/// Equal build numbers do not make two sources interchangeable: the recorded
+/// source may be updated independently after a switch to the managed install.
+fn vendor_source_drifted(vendor: &Path, wrapper: &Path) -> bool {
+    let Some(recorded) = read_info_plist(wrapper).ok().and_then(|info| {
+        info.get(profile_shim::VENDOR_BUNDLE_KEY)
+            .and_then(Value::as_string)
+            .map(PathBuf::from)
+    }) else {
+        return true;
+    };
+    match (fs::canonicalize(vendor), fs::canonicalize(&recorded)) {
+        (Ok(current), Ok(recorded)) => current != recorded,
+        _ => vendor != recorded.as_path(),
+    }
+}
+
 /// Whether the wrapper at `wrapper` can hand a launch back: it records all
 /// three parameters and the binary they name is still there.
 ///
@@ -298,6 +315,8 @@ fn built_by_version(wrapper: &Path) -> Option<String> {
 /// (`None` if that is not installed) and the ai-profiles version asking,
 /// `built_by`.
 ///
+/// The recorded vendor source must match the resolved one, even at the same
+/// build: otherwise the shim and host would watch independently updated apps.
 /// A vendor whose version cannot be read leaves an existing wrapper `Current`,
 /// because there is nothing to compare it with and a rebuild would fail anyway.
 /// The other checks have no such excuse: a wrapper that cannot ask for a
@@ -310,8 +329,11 @@ pub fn state(vendor_bundle: Option<&Path>, wrapper: &Path, built_by: &str) -> Wr
         return WrapperState::Missing;
     }
     let drifted = vendor_bundle
-        .and_then(bundle_version)
-        .is_some_and(|current| version_drifted(&current, built_from_version(wrapper).as_deref()));
+        .and_then(|vendor| bundle_version(vendor).map(|current| (vendor, current)))
+        .is_some_and(|(vendor, current)| {
+            version_drifted(&current, built_from_version(wrapper).as_deref())
+                || vendor_source_drifted(vendor, wrapper)
+        });
     let ours = built_by_version(wrapper).as_deref() == Some(built_by);
     let config_env = read_info_plist(wrapper).is_ok_and(|info| config_env_recorded(&info));
     if drifted || !ours || !handoff_ready(wrapper) || !config_env {
@@ -1023,6 +1045,10 @@ mod tests {
         let bundle = bundle_with_info(dir, name, &entries);
         let mut info = read_info_plist(&bundle).unwrap();
         info.insert(profile_shim::PROXY_PREPARE_KEY.into(), Value::Boolean(true));
+        info.insert(
+            profile_shim::VENDOR_BUNDLE_KEY.into(),
+            Value::String(dir.join("Vendor.app").display().to_string()),
+        );
         write_plist(&bundle.join("Contents/Info.plist"), info).unwrap();
         bundle
     }
@@ -1058,6 +1084,71 @@ mod tests {
         assert_eq!(
             state_of(&dir.path().join("Missing.app")),
             WrapperState::Missing
+        );
+    }
+
+    #[test]
+    fn switching_vendor_source_at_the_same_build_requires_a_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = write_host_binary(dir.path());
+        let external = bundle_with_info(dir.path(), "Vendor.app", &[("CFBundleVersion", "2.0")]);
+        let managed = bundle_with_info(dir.path(), "Managed.app", &[("CFBundleVersion", "2.0")]);
+        let wrapper = wrapper_bundle(dir.path(), "Wrapper.app", "2.0", &host);
+
+        assert_eq!(
+            state(Some(&external), &wrapper, BUILT_BY),
+            WrapperState::Current
+        );
+        assert_eq!(
+            state(Some(&managed), &wrapper, BUILT_BY),
+            WrapperState::Stale
+        );
+
+        // A rebuild repins the shim to the selected source as well as its build.
+        let mut info = read_info_plist(&wrapper).unwrap();
+        info.insert(
+            profile_shim::VENDOR_BUNDLE_KEY.into(),
+            Value::String(managed.display().to_string()),
+        );
+        write_plist(&wrapper.join("Contents/Info.plist"), info).unwrap();
+        assert_eq!(
+            state(Some(&managed), &wrapper, BUILT_BY),
+            WrapperState::Current
+        );
+    }
+
+    #[test]
+    fn an_independently_updated_recorded_source_cannot_leave_the_wrapper_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = write_host_binary(dir.path());
+        let external = bundle_with_info(dir.path(), "Vendor.app", &[("CFBundleVersion", "2.1")]);
+        let managed = bundle_with_info(dir.path(), "Managed.app", &[("CFBundleVersion", "2.0")]);
+        let wrapper = wrapper_bundle(dir.path(), "Wrapper.app", "2.0", &host);
+
+        // The shim would hand off because the old external source advanced.
+        // The host must rebuild instead of reopening that same shim in a loop.
+        assert!(version_drifted(
+            &bundle_version(&external).unwrap(),
+            built_from_version(&wrapper).as_deref(),
+        ));
+        assert_eq!(
+            state(Some(&managed), &wrapper, BUILT_BY),
+            WrapperState::Stale
+        );
+    }
+
+    #[test]
+    fn a_vendor_path_alias_does_not_require_a_rebuild() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = write_host_binary(dir.path());
+        let vendor = bundle_with_info(dir.path(), "Vendor.app", &[("CFBundleVersion", "2.0")]);
+        let alias = dir.path().join("Alias.app");
+        std::os::unix::fs::symlink(&vendor, &alias).unwrap();
+        let wrapper = wrapper_bundle(dir.path(), "Wrapper.app", "2.0", &host);
+
+        assert_eq!(
+            state(Some(&alias), &wrapper, BUILT_BY),
+            WrapperState::Current
         );
     }
 

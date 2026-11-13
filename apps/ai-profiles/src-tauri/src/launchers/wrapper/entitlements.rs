@@ -10,13 +10,17 @@ use plist::{Dictionary, Value};
 
 /// Entitlements only a binary signed by the vendor's team can hold, whatever
 /// their values.
-const TEAM_SCOPED_KEYS: [&str; 6] = [
+const TEAM_SCOPED_KEYS: [&str; 7] = [
     "com.apple.application-identifier",
     "com.apple.developer.team-identifier",
     "keychain-access-groups",
     "com.apple.security.application-groups",
     "com.apple.developer.aps-environment",
     "com.apple.developer.associated-domains",
+    // Added by ChatGPT 26.1106: this restricted capability needs the vendor's
+    // provisioning identity even though its value is only a boolean. Keeping it
+    // on an ad-hoc wrapper makes launchd reject the app with POSIX 163.
+    "com.apple.developer.usernotifications.communication",
 ];
 
 /// Entitlement that lets the wrapper's ad-hoc executable load the vendor's
@@ -148,6 +152,25 @@ mod tests {
                 assert!(!stripped.contains_key(key), "{name}: {key} survived");
             }
         }
+    }
+
+    #[test]
+    fn strip_removes_restricted_communication_notifications_without_a_team_id() {
+        let vendor = parse(CHATGPT);
+        let key = "com.apple.developer.usernotifications.communication";
+        assert_eq!(vendor.get(key), Some(&Value::Boolean(true)));
+        assert!(team_scoped_entitlements(&vendor, None)
+            .iter()
+            .any(|k| k == key));
+
+        let stripped = strip_team_entitlements(&vendor, None);
+
+        assert!(!stripped.contains_key(key));
+        assert!(team_scoped_entitlements(&stripped, None).is_empty());
+        assert_eq!(
+            stripped.get("com.apple.security.cs.allow-jit"),
+            Some(&Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -296,7 +319,9 @@ mod tests {
             [
                 "com.apple.application-identifier",
                 "com.apple.developer.aps-environment",
+                "com.apple.developer.associated-domains",
                 "com.apple.developer.team-identifier",
+                "com.apple.developer.usernotifications.communication",
                 "com.apple.security.application-groups",
                 "keychain-access-groups",
             ]
