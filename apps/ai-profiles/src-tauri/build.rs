@@ -2,6 +2,12 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DEP_TAURI_DEV");
+    if std::env::var("PROFILE").as_deref() == Ok("release") && tauri_build::is_dev() {
+        panic!(
+            "Release builds must embed the frontend: use tauri build or cargo build --release --features custom-protocol"
+        );
+    }
     build_profile_shim();
     tauri_build::build()
 }

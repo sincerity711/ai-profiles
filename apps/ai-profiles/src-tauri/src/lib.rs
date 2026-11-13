@@ -179,3 +179,33 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(all(test, feature = "custom-protocol"))]
+mod packaging_tests {
+    #[test]
+    fn production_context_embeds_the_entry_and_its_local_assets() {
+        assert!(!tauri::is_dev());
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let entry = context
+            .assets()
+            .get(&"index.html".into())
+            .expect("production builds must embed index.html");
+        let html = std::str::from_utf8(&entry).unwrap();
+        let mut scripts = 0;
+        for attribute in ["src=\"", "href=\""] {
+            for reference in html.split(attribute).skip(1) {
+                let path = reference.split('"').next().unwrap();
+                if path.starts_with('/') {
+                    assert!(
+                        context.assets().get(&path.into()).is_some(),
+                        "entry references a missing embedded asset: {path}"
+                    );
+                    if path.ends_with(".js") {
+                        scripts += 1;
+                    }
+                }
+            }
+        }
+        assert!(scripts > 0, "production entry must load its JavaScript");
+    }
+}

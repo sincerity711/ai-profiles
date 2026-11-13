@@ -27,6 +27,11 @@ default-members = [".", "shim"]
 name = "ai_profiles_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Production builds embed the frontend with `--features custom-protocol`.
+# Keep development and ordinary unit tests independent of a frontend build.
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
